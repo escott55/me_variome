@@ -10,6 +10,8 @@
 *.so
 .RData
 .Rhistory
+Rplots.pdf
+*.bak
  
 # Video/Image Files #
 #####################
@@ -22,7 +24,7 @@ rawdata/*
 pcaplots/*
 results/*
 test/*
-resources/*
+#resources/*
 #rscripts/*
 rscripts/figures/*
 docs/*
@@ -36,6 +38,7 @@ docs/*
 *.tped
 *.bed
 *.gz
+*.bz2
 *.out
 *.pedind
 *.map
