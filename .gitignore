@@ -23,7 +23,8 @@ pcaplots/*
 results/*
 test/*
 resources/*
-rscripts/*
+#rscripts/*
+rscripts/figures/*
 docs/*
 
 #
