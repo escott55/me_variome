@@ -91,7 +91,7 @@ admixtheme = {
             }
             #'strip.text':ggplot2.element_text(size=8, colour="blue",angle=90),
 
-pointtheme = {
+pointtheme_nolegend = {
             'panel.background':ggplot2.element_blank(),
             'axis.text':ggplot2.element_text(colour="black",size=15),
             'axis.title':ggplot2.element_text(colour="black",size=15),
@@ -99,10 +99,11 @@ pointtheme = {
             'panel.grid.minor':ggplot2.element_blank(),
             'panel.grid.major':ggplot2.element_blank(),
             'legend.position':"none",
+            'axis.text.x': ggplot2.element_text(angle = 45, hjust=1, vjust=1),
             'strip.text.y':ggplot2.element_text(colour="black",face="bold",size=15,angle=-90),
             'strip.text.x':ggplot2.element_text(colour="black",face="bold",size=15),
-            'strip.background':ggplot2.element_rect(colour="white", fill="white")
             }
+            #'strip.background':ggplot2.element_rect(colour="white", fill="white")
             #'axis.title':ggplot2.element_blank(),
 
 #'panel.background':ggplot2.element_rect(colour = "black"),

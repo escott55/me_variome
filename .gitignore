@@ -33,11 +33,13 @@ docs/*
 # Raw Data #
 ############
 *.txt
+*.tsv
 *.ped
 *.dat
 *.tped
 *.bed
 *.gz
+*.gtf
 *.bz2
 *.out
 *.pedind

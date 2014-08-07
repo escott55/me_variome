@@ -2,9 +2,9 @@
 
 import os, sys
 import string
-from pandas import *
-import pandas.rpy.common as com
-from collections import Counter
+#from pandas import *
+#import pandas.rpy.common as com
+#from collections import Counter
 from scipy import stats
 import math
 import csv
@@ -174,24 +174,6 @@ def anotherSingleDatasetAnalysis( varclasses=[4], figureprefix="results/figures/
     grdevices.dev_off()
 # END anotherSingleDatasetAnalysis
 
-def main_old(sampleannot, prefix) :
-    prefix = "daily.clean"
-    statsfile = "./results/%s_regioncounts.txt"%prefix
-    print "Writing statsfile:",statsfile
-    regioncounts = readVariantSet1( statsfile, prefix, sampleannot, vclasses=[5,4], maxaf=.1, force=True )
-    regioncounts.index = regioncounts["Individual.ID"]
-    regioncounts = merge(regioncounts,sampleannot[["Individual.ID","Source","Consang"]],
-                         on="Individual.ID")
-
-    regioncounts.to_csv(statsfile,sep="\t",index=False)
-
-    euro_counts = regioncounts[regioncounts.region == "Europe"]
-
-    for vclass in [1,2,3,4,5] :
-        figureprefix = "./results/figures/variome_%d"%vclass
-        anotherSingleDatasetAnalysis( [vclass], figureprefix)
-# END main_old
-
 ################################################################################
 # calcRegionAF
 ################################################################################
@@ -220,11 +202,20 @@ if __name__ == "__main__" :
     prefix = "merged.clean"
 
     prefix = "test"
-    varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
-    varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp.clean_genes.tsv"
+    #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
+    varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
 
     vardf = read_csv(varfile,sep="\t")
 
+
+    print vardf.shape
+    lofvariants = vardf[vardf.LOF.notnull()]
+    print lofvariants.shape
+    lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
+    lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
+
+
+    sys.exit(1)
     print len(vardf["Middle East"].isnull())
     #print vardf[["chrom","pos","FunctionGVS","Priority"]][vardf["Middle East"].isnull()].head()
     vardf["me_af"] = calcRegionAF(vardf,"Middle East")

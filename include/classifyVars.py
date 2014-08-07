@@ -541,6 +541,7 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
 # plotClassDist
 ################################################################################
 def plotClassDist( genefile, regionlist, outdir="./results/figures/classes" ) :
+    print "Running plotClassDist"
     filepath, basename, ext = hk.getBasename( genefile )
     print "Reading file:",genefile
     genedata = read_csv(genefile, sep="\t")
@@ -690,6 +691,7 @@ def makeGeminiDB( ):
 # burdenAnalysis
 ################################################################################
 def burdenAnalysis( tfile ) :
+    print "Running burdenAnalysis"
     head = {}
     patburden = {}
     for row in csv.reader(open(tfile),delimiter="\t") :
@@ -727,6 +729,7 @@ def readAnnotData( ):
 # allPatVarStats
 ################################################################################
 def allPatVarStats( allclasses, outdir="./classes" ) :
+    print "Running allPatVarStats"
     alldata = {}
     for vclass in allclasses :
         cfile = allclasses[vclass]
@@ -738,7 +741,7 @@ def allPatVarStats( allclasses, outdir="./classes" ) :
     patannot, header = readAnnotData()
     samplesfile = "%s/allpatsvarstats.txt" % outdir
     OUT = open(samplesfile, "wb")
-    print allclasses, header
+    #print allclasses, header
     OUT.write("Sample"+"\t".join([x+"(hom|het)" for x in allclasses])+
               "hets\thoms"+"\t".join(header)+"\n")
     for pat in alldata :
@@ -778,7 +781,7 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
 
     genedata = read_csv(geneannotfile, sep="\t")
     regionlist = [x for x in regionlist if x in genedata.columns]
-    print regionlist
+    print "Regions included:",regionlist
 
     keepcols = ["chrom","pos","AF","vclass","NMD","LOF"] + regionlist
     keep_idx = genedata.groupby(["chrom","pos"])["vclass"].idxmax()
@@ -829,10 +832,10 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
             csamp = samples[i-9]
             #print "I:",i, csamp,"-",vclass,"-", genotype
             patcounts[csamp][vclass][genotype-1] += 1
-        if islof : 
-            patcounts[csamp]["LOF"][genotype-1] += 1
-        if isnmd : 
-            patcounts[csamp]["NMD"][genotype-1] += 1
+            if islof : 
+                patcounts[csamp]["LOF"][genotype-1] += 1
+            if isnmd : 
+                patcounts[csamp]["NMD"][genotype-1] += 1
 
         #if linecount == 500 : print "Breaking!"; break
 
@@ -980,7 +983,7 @@ def plotSampleCounts( samplecountsfile, outdir="./results/figures/classes", forc
         scounts = scounts[scounts.Region.isin(["Europe","Middle East","South Asia"])]
     elif basename.find( "1000G" ) >= 0 :
         scounts = scounts[scounts.Region.isin(["Europe","Africa","Middle East"])] #,"South Asia"
-    print scounts.head(10)
+    #print scounts.head(10)
 
     scounts = scounts[scounts.value < 50]
 
@@ -1018,6 +1021,75 @@ def calcPairwisePvalues( tdf, groupcol, factcol, onetailed=False ) :
     print pvals.head()
     return pvals
 # END calcPairwisePvalues
+
+def calcHomoz( varcounts ):
+    ref,het,hom = [int(x) for x in varcounts.split(":")]
+    if het+hom == 0 : return 0
+    return hom/float(het+hom)
+# END calcHomoz
+
+################################################################################
+# plotHomozygosity
+################################################################################
+def plotHomozygosity( geneannotfile, regionlist, outdir) :
+    print "Running plotHomozygosity"
+    vardf = read_csv( geneannotfile, sep="\t" )
+
+    filepath, basename, suffix = hk.getBasename( geneannotfile )
+
+    homzdf = melt(vardf,id_vars=["chrom","pos","vclass"],value_vars=regionlist)
+    # Calculate AF
+
+    homzdf = homzdf[homzdf["value"].notnull()]
+
+    bins=[0.,.005,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.]
+    if basename.find("variome") >= 0 :
+        levels = ["Europe","Middle East"]
+    elif basename.find("meceu") >= 0 :
+        levels = ["Europe","Middle East"]
+    elif basename.find("me1000G") >= 0 :
+        bins=[0.,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.]
+        levels = ["Africa","Europe","Middle East"]
+
+    assert len(homzdf[homzdf["value"].isnull()]) == 0
+
+    homzdf["AF"] = [calcAF(x) for x in homzdf["value"]]
+
+    # Calculate Homozygosity
+    homzdf["Homozygosity"] = [calcHomoz(x) for x in homzdf["value"]]
+
+    #afbinned = DataFrame({'vcount':countdat.groupby(["dbsnp",np.digitize(countdat.AF, bins)]).size()}).reset_index()
+    print homzdf.head(10)
+    #print cut(homzdf.AF, bins)
+    print "$"*60
+    #print  (homzdf[homzdf.Homozygosity > 0][["variable","AF","Homozygosity"]]
+                          #.groupby(["variable",cut(homzdf.AF, bins)])
+                          #.mean())
+    afbinned = homzdf[homzdf.Homozygosity > 0][["variable","AF","Homozygosity"]]
+    afbinned["bins"] = cut(afbinned.AF, bins)
+
+    print afbinned.head(10)
+    r_dataframe = com.convert_to_r_dataframe(afbinned)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="factor(bins)", y="Homozygosity", fill="factor(variable)") +
+                ggplot2.geom_boxplot() + \
+                ggplot2.ggtitle("Fraction of Homozygous Variants") +
+                ggplot2.facet_grid( robjects.Formula('variable ~ .') ) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45),
+                                 'legend.position':"none"}) +
+                ggplot2.scale_x_discrete("AF Binned") +
+                ggplot2.scale_y_continuous("Homozygous Fraction") +
+                ggplot2.theme(**mytheme))
+                #ggplot2.scale_y_log10() + ggplot2.xlim(0., 1.) + \
+                #ggplot2.geom_histogram(breaks=robjects.FloatVector([0,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1])) + \
+                #ggplot2.aes_string(fill="factor(continent)")
+
+    figurename = "%s/%s_homozaf.png" % (outdir, basename)
+    print "Making figure:",figurename
+    grdevices.png(figurename)
+    p.plot()
+    grdevices.dev_off()
+# END plotHomozygosity
 
 def getLevels( annotcol, basename, samplecounts ):
 
@@ -1143,15 +1215,14 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
                 ggplot2.aes_string(x="factor("+annotcol+")", y="Burden")+#, color="factor(Region)")+ 
                 ggplot2.geom_boxplot(ggplot2.aes_string(color="factor(Continent2)"), notch=True) +
                 ggplot2.ggtitle("Heterozygous") +
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45, hjust=1, vjust=1),
-                                 'axis.title.x': ggplot2.element_blank(),
+                ggplot2.theme(**{ 'axis.title.x': ggplot2.element_blank(),
                                  'axis.title.y': ggplot2.element_blank()}) +
                 ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"), 
                                   hjust=0, vjust=1, size=3, data = r_pvals ) +
                 ggplot2.scale_y_continuous("Variant Burden") +
                 ggplot2.scale_x_discrete(annotcol) +
                 ggplot2.facet_grid( robjects.Formula('vclass ~ .') , scale="free") +
-                ggplot2.theme(**pointtheme) )
+                ggplot2.theme(**pointtheme_nolegend) )
 
     figurename = "%s/%s_sampcounts2_het.png" % (outdir,basename)
     print "Making figure:",figurename
@@ -1171,15 +1242,14 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
                 ggplot2.aes_string(x="factor("+annotcol+")", y="Burden") +
                 ggplot2.geom_boxplot(ggplot2.aes_string(color="factor(Continent2)"), notch=True) +
                 ggplot2.ggtitle("Homozygous") +
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45, hjust=1, vjust=1),
-                                 'axis.title.x': ggplot2.element_blank(),
+                ggplot2.theme(**{ 'axis.title.x': ggplot2.element_blank(),
                                  'axis.title.y': ggplot2.element_blank()}) +
                 ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"), 
                                   hjust=0, vjust=1, size=3, data = r_pvals ) +
                 #ggplot2.scale_y_continuous("Variant Burden") +
                 #ggplot2.scale_x_discrete(annotcol) +
                 ggplot2.facet_grid( robjects.Formula('vclass ~ .') , scale="free") +
-                ggplot2.theme(**pointtheme) )
+                ggplot2.theme(**pointtheme_nolegend) )
 
     figurename = "%s/%s_sampcounts2_hom.png" % (outdir,basename)
     print "Making figure:",figurename
@@ -1194,53 +1264,88 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
     gridextra.grid_arrange( *[phet,phom], ncol=2 )
     grdevices.dev_off()
 
-    #vclasses = ["ClassNMD","ClassLOF"]#,"Class5"
-    #for vclass in vclasses :
-        #samplecounts[vclass] = (samplecounts[vclass+"_het"] + 
-                                #samplecounts[vclass+"_hom"])
-    #scounts = melt(samplecounts,id_vars=["Sample","Region","Ethnicity"],
-                  #value_vars=vclasses)
-    #scount = scounts[~scounts.Region.isin(["NA","Oceania"])]
-    #if basename.find( "meceu" ) >= 0: 
-        #scounts = scounts[scounts.Region.isin(["Europe","Middle East","South Asia"])]
-    #print scounts.head(10)
-
+    print "Starting LOF plots:"
     print scounts.head(10)
-    print scounts.vclass.unique()
-    lofcounts = scounts[scounts.vclass.isin(["ClassNMD","ClassLOF"])]
-    #lofcounts = scounts.groupby(["Sample","Region","Source","vclass"])
-    lofcounts["Burden"] = lofcounts["value"].map(int)
-    print lofcounts.shape
-    lofcounts = lofcounts[lofcounts.Burden < 30]
-    print "$"*50
-    print lofcounts.head()
-    print "$"*50
+    #print scounts.vclass.unique()
+    lof_het = scounts[(scounts.vclass.isin(["ClassNMD","ClassLOF"])) &
+                      (scounts.vtype == "het")]
+    assert len(lof_het) > 0
+    print hk.dfTable(lof_het.vclass)
+    lof_het["Burden"] = lof_het["value"].map(int)
+    #print "$"*50
+    #print lof_het.head()
+    #print "$"*50
 
-    pvals = []
-    for vtype, subdat in lofcounts.groupby("vtype") :
-        tmpdf = calcPairwisePvalues( subdat, "vclass", "Burden" )
-        tmpdf["vtype"] = vtype
-        pvals.append( tmpdf )
+    #pvals = []
+    #for vtype, subdat in lofcounts.groupby("vtype") :
+        #tmpdf = calcPairwisePvalues( subdat, "vclass", "Burden" )
+        #tmpdf["vtype"] = vtype
+        #pvals.append( tmpdf )
+    #pvals = concat( pvals ).reset_index(drop=True)
+    pvals = calcPairwisePvalues( lof_het, "vclass", "Burden" )
+    pvals["x"] = tlevels[0]
+    pvals["y"] = pvals["y"]*1.10
+    print pvals
 
-    pvals = concat( pvals ).reset_index(drop=True)
-
-    r_dataframe = com.convert_to_r_dataframe(lofcounts)
+    r_dataframe = com.convert_to_r_dataframe(lof_het)
+    r_dataframe = fixRLevels( r_dataframe, annotcol, tlevels )
     r_pvals = com.convert_to_r_dataframe(pvals)
-    p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x="factor("+annotcol+")", y="Burden", fill="factor("+annotcol+")") +
-                ggplot2.geom_boxplot() +
-                ggplot2.ggtitle("High Impact Variants by Region") +
-                ggplot2.theme(**mytheme) +
-                #ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"), data = r_pvals ) +
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
-                ggplot2.scale_y_continuous("Variant Burden" ) +#, limits=robjects.IntVector((0,50))) +
-                ggplot2.scale_x_discrete(annotcol) +
-                ggplot2.facet_grid( robjects.Formula('vclass ~ vtype'), scale="free") )
-    figurename = "%s/%s_lofcounts2.png" % (outdir,basename)
+    phet = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="factor("+annotcol+")", y="Burden") +
+                ggplot2.geom_boxplot(ggplot2.aes_string(color="factor(Continent2)"), 
+                                     notch=True) +
+                ggplot2.ggtitle("Heterozygous") +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"), 
+                                  hjust=0, vjust=1, size=3, data = r_pvals ) +
+                ggplot2.theme(**{ 'axis.title.x': ggplot2.element_blank(),
+                                 'axis.title.y': ggplot2.element_blank()}) +
+                #ggplot2.scale_y_continuous("Variant Burden" ) +#, limits=robjects.IntVector((0,50))) +
+                #ggplot2.scale_x_discrete(annotcol) +
+                ggplot2.facet_grid( robjects.Formula('vclass ~ .'), scale="free") +
+                ggplot2.theme(**pointtheme_nolegend) )
+    figurename = "%s/%s_lofcounts_het.png" % (outdir,basename)
     print "Making figure:",figurename
     grdevices.png(figurename)
-    p.plot()
+    phet.plot()
     grdevices.dev_off()
+
+
+    lof_hom = scounts[(scounts.vclass.isin(["ClassNMD","ClassLOF"])) & 
+                     (scounts.vtype == "hom")]
+    print hk.dfTable(lof_hom.vclass)
+    lof_hom["Burden"] = lof_hom["value"].map(int)
+
+    pvals = calcPairwisePvalues( lof_hom, "vclass", "Burden" )
+    pvals["x"] = tlevels[0]
+    pvals["y"] = pvals["y"]*1.10
+    print pvals
+
+    r_dataframe = com.convert_to_r_dataframe(lof_hom)
+    r_dataframe = fixRLevels( r_dataframe, annotcol, tlevels )
+    r_pvals = com.convert_to_r_dataframe(pvals)
+    phom = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="factor("+annotcol+")", y="Burden") +
+                ggplot2.geom_boxplot(ggplot2.aes_string(color="factor(Continent2)"), 
+                                     notch=True) +
+                ggplot2.ggtitle("Homozygous") +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"), 
+                                  hjust=0, vjust=1, size=3, data = r_pvals ) +
+                ggplot2.theme(**{ 'axis.title.x': ggplot2.element_blank(),
+                                 'axis.title.y': ggplot2.element_blank()}) +
+                ggplot2.facet_grid( robjects.Formula('vclass ~ .'), scale="free") +
+                ggplot2.theme(**pointtheme_nolegend) )
+    figurename = "%s/%s_lofcounts_hom.png" % (outdir,basename)
+    print "Making figure:",figurename
+    grdevices.png(figurename)
+    phom.plot()
+    grdevices.dev_off()
+
+    figurename = "%s/%s_lofcounts.png" % (outdir,basename)
+    print "Making figure:",figurename
+    grdevices.png(figurename, width=6, height=5, units="in",res=300)
+    gridextra.grid_arrange( *[phet,phom], ncol=2 )
+    grdevices.dev_off()
+    sys.exit(1)
 # END plotSampleCounts2
 
 ################################################################################
@@ -1268,88 +1373,6 @@ def runClassifyWorkflow( vcffile, sampleannot, regionlist, figuredir ):
     plotHomozygosity( geneannotfile, regionlist, outdir=figuredir )
     plotClassDist( geneannotfile, regionlist, outdir=figuredir )
 # END runClassifyWorkflow
-
-################################################################################
-# calcHomoz
-################################################################################
-def calcHomoz( varcounts ):
-    ref,het,hom = [int(x) for x in varcounts.split(":")]
-    if het+hom == 0 : return 0
-    return hom/float(het+hom)
-
-################################################################################
-# plotHomozygosity
-################################################################################
-def plotHomozygosity( geneannotfile, regionlist, outdir) :
-    print "Running plotHomozygosity"
-    vardf = read_csv( geneannotfile, sep="\t" )
-
-    filepath, basename, suffix = hk.getBasename( geneannotfile )
-
-    homzdf = melt(vardf,id_vars=["chrom","pos","vclass"],value_vars=regionlist)
-    # Calculate AF
-
-    homzdf = homzdf[homzdf["value"].notnull()]
-
-    bins=[0.,.005,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.]
-    if basename.find("variome") >= 0 :
-        levels = ["Europe","Middle East"]
-    elif basename.find("meceu") >= 0 :
-        levels = ["Europe","Middle East"]
-    elif basename.find("me1000G") >= 0 :
-        bins=[0.,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.]
-        levels = ["Africa","Europe","Middle East"]
-
-    assert len(homzdf[homzdf["value"].isnull()]) == 0
-
-    homzdf["AF"] = [calcAF(x) for x in homzdf["value"]]
-
-    # Calculate Homozygosity
-    homzdf["Homozygosity"] = [calcHomoz(x) for x in homzdf["value"]]
-
-    #afbinned = DataFrame({'vcount':countdat.groupby(["dbsnp",np.digitize(countdat.AF, bins)]).size()}).reset_index()
-    print homzdf.head(10)
-    #print cut(homzdf.AF, bins)
-    print "$"*60
-    #print  (homzdf[homzdf.Homozygosity > 0][["variable","AF","Homozygosity"]]
-                          #.groupby(["variable",cut(homzdf.AF, bins)])
-                          #.mean())
-    afbinned = homzdf[homzdf.Homozygosity > 0][["variable","AF","Homozygosity"]]
-    afbinned["bins"] = cut(afbinned.AF, bins)
-
-    print afbinned.head(10)
-    r_dataframe = com.convert_to_r_dataframe(afbinned)
-    p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x="factor(bins)", y="Homozygosity", fill="factor(variable)") +
-                ggplot2.geom_boxplot() + \
-                ggplot2.ggtitle("Homozygous Ratio by AF") +
-                ggplot2.facet_grid( robjects.Formula('variable ~ .') ) +
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45),
-                                 'legend.position':"none"}) +
-                ggplot2.scale_x_discrete("AF Binned") +
-                ggplot2.scale_y_continuous("Homozygous Ratio") +
-                ggplot2.theme(**mytheme))
-                #ggplot2.scale_y_log10() + ggplot2.xlim(0., 1.) + \
-                #ggplot2.geom_histogram(breaks=robjects.FloatVector([0,.01,.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,1])) + \
-                #ggplot2.aes_string(fill="factor(continent)")
-
-    figurename = "%s/%s_homozaf.png" % (outdir, basename)
-    print "Making figure:",figurename
-    grdevices.png(figurename)
-    p.plot()
-    grdevices.dev_off()
-    sys.exit(1)
-# END plotHomozygosity
-    #print afbinned.head(10)
-    #for grp,vardata in  afbinned.groupby(["variable","bins"]) :
-        #print grp
-        #print vardata.head(10)
-        #print vardata.Homozygosity.mean()
-
-    #afbinned = DataFrame({'homoz':homzdf[["variable","AF","Homozygosity"]]
-                          #.groupby(["variable",cut(homzdf.AF, bins)])
-                          #.mean()}
-                        #).reset_index()
 
 ################################################################################
 # Main
