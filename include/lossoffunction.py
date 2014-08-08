@@ -5,9 +5,13 @@ import string
 #from pandas import *
 #import pandas.rpy.common as com
 #from collections import Counter
+import random
 from scipy import stats
+from scipy.stats import ttest_ind
 import math
 import csv
+import pybedtools
+
 
 from localglobals import *
 
@@ -188,6 +192,131 @@ def calcRegionAF( vardf, region ) :
     return region_burden/region_totals
 # End calcRegionAF
 
+
+def calcPairwisePvalues( tdf, factcol, groupcol=None, onetailed=False ) :
+    pvals = []
+    if groupcol is not None :
+        for grp in tdf[groupcol].unique():
+            lof = tdf[(tdf.Vclass=="LoF") & (tdf[groupcol] ==grp)][factcol].tolist()
+            rand = tdf[(tdf.Vclass=="Random") & (tdf[groupcol] ==grp)][factcol].tolist()
+            maxY = max(lof+rand)
+            ts,pv = ttest_ind(lof, rand)
+            #p/2 < alpha and t < 0
+            #if onetailed : print "Todo"
+            pvals.append( Series(data=[grp,pv,ts,"-2",maxY],
+                                 index=[groupcol,"pvalue","T-statistic","x","y"]))
+    else :
+        lof = tdf[(tdf.Vclass=="LoF")][factcol].tolist()
+        rand = tdf[(tdf.Vclass=="Random")][factcol].tolist()
+        maxY = max(lof+rand)
+        ts,pv = ttest_ind(lof, rand)
+        #p/2 < alpha and t < 0
+        #if onetailed : print "Todo"
+        pvals.append( Series(data=[pv,ts,"-2",maxY],
+                                 index=["pvalue","T-statistic","x","y"]))
+    pvals = DataFrame(pvals)
+    pvals["Pvalue"] = ["P-value: %.3g\nT-statistic: %.2f" %(x,y) 
+                       for x,y in pvals[["pvalue","T-statistic"]].values]
+
+    return pvals
+# END calcPairwisePvalues
+
+def rvisAnalysis( lofgenes, randgenes, targetdir, prefix ) :
+    rvisgenes = read_csv("resources/rvis_data.txt", sep="\t")
+    
+    lofrvis = merge( lofgenes, rvisgenes, left_on="Gene",right_on="gene")
+    lofrvis["Vclass"] = "LoF"
+    randrvis = merge( randgenes, rvisgenes, left_on="Gene",right_on="gene")
+    randrvis["Vclass"] = "Random"
+    tcols = ["Gene","RVIS","RVIS_percent","Vclass"]
+    allrvis = concat( [lofrvis[tcols], randrvis[tcols]] ).reset_index()
+    
+    pvals = calcPairwisePvalues( allrvis, "RVIS" )
+    pvals["x"] = -5
+    pvals["y"] = 0.5
+
+    r_dataframe = com.convert_to_r_dataframe(allrvis)
+    r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="factor(Vclass)", y="RVIS", group="factor(Vclass)") +
+                ggplot2.geom_jitter(ggplot2.aes_string(colour="factor(Vclass)")) +
+                ggplot2.ggtitle("RVIS distribution") +
+                ggplot2.scale_y_continuous("RVIS") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_rvisjitter.png" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.png(figname)
+    p.plot()
+    grdevices.dev_off()
+
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="RVIS") +
+                ggplot2.geom_density(ggplot2.aes_string(colour="factor(Vclass)")) +
+                ggplot2.ggtitle("RVIS") +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"),
+                                    hjust=0, vjust=1, size=7, data = r_pvals ) +
+                ggplot2.scale_y_continuous("RVIS Density") +
+                ggplot2.xlim(-5,5) +
+                ggplot2.theme(**mytheme) )
+    figname = "%s/%s_rvisdensity.png" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.png(figname)
+    p.plot()
+    grdevices.dev_off()
+
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string( x="RVIS" ) +
+                ggplot2.stat_density(ggplot2.aes_string(ymax="..density..", ymin="-..density..",
+                                                        fill="factor(Vclass)"),
+                                     geom="ribbon", position="identity") + #,notch=True 
+                #ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", y="0.0", x="y"),
+                                 #hjust=0, data = r_pvals ) +
+                ggplot2.ggtitle("RVIS distribution") +
+                ggplot2.facet_grid(robjects.Formula('Vclass ~ .'), scales="free") +
+                ggplot2.coord_flip() +
+                ggplot2.theme(**mytheme))
+
+    figname = "%s/%s_rvisribbon.png" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.png(figname)
+    p.plot()
+    grdevices.dev_off()
+# END rvisAnalysis 
+
+def psiIntersect( vardata, bedfile ) :
+    psibedfile = "resources/isoformexpress/globalpsi.bed"
+
+    tvars = vardata[["chrom","pos"]].copy()
+    tvars.rename(columns={'chrom':'#chrom'}, inplace=True)
+    tvars["#chrom"] = ["chr"+str(x) for x in tvars["#chrom"]]
+    tvars["end"] = tvars["pos"]+1
+    
+    tvars.to_csv(bedfile,sep="\t",index=False)
+    psibed = pybedtools.BedTool(psibedfile)
+    #resfile = "results/intersections.bed"
+    #a.intersect(testexprfile).saveas(resfile)
+    inter = psibed.intersect(bedfile)
+    print inter
+    print type(inter)
+    print inter[:3]
+    res = DataFrame(inter, 
+                    columns=["chrom","start","end","Gene","isocov","isocount","PSI"])
+    print res.head()
+    return res
+# END psiIntersect
+
+def psiAnalysis( lofvariants, randvariants, targetdir, prefix ) :
+    lofbed = "results/tmp/%s_lofsnps.bed" %prefix
+    randbed = "results/tmp/%s_randsnps.bed" %prefix
+    lofpsi = psiIntersect( lofvariants, lofbed )
+    randpsi = psiIntersect( randvariants, randbed )
+
+    print lofpsi.shape
+    print randpsi.shape
+# END psiAnalysis
+
 ################################################################################
 # Main
 ################################################################################
@@ -204,16 +333,41 @@ if __name__ == "__main__" :
     prefix = "test"
     #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
     varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
+    targetvarfile = hk.copyToSubDir( varfile, "lof" )
 
-    vardf = read_csv(varfile,sep="\t")
+    targetdir, basename, suffix = hk.getBasename( targetvarfile )
+    prefix = basename[:basename.find("_genes")]
 
+    vardf = read_csv(targetvarfile,sep="\t")
 
     print vardf.shape
-    lofvariants = vardf[vardf.LOF.notnull()]
+    lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
     print lofvariants.shape
     lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
     lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
 
+    lofgenes = DataFrame({'Gene':lofvariants.Gene.unique()})
+    randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
+
+
+    randrows = random.sample(vardf.index, len(lofvariants))
+    randvariants = vardf.ix[randrows]
+
+    # Intersect with Synthetic Lethal list
+    sldata = read_csv("resources/sl_genelist.txt", sep="\t",
+                      header=None, names=["Gene","interactions"])
+
+    # Intersect with omim list
+    omimgenes = read_csv("resources/omimgenes.txt", sep="\t")
+
+    # Intersect with Kegg Pathway
+    kegggenes = read_csv("resources/keggPathway.txt", sep="\t")
+
+    # Intersect with RVIS
+    rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
+  
+    # Intersect with PSI
+    #psiAnalysis( lofvariants, randvariants, targetdir, prefix )
 
     sys.exit(1)
     print len(vardf["Middle East"].isnull())

@@ -192,6 +192,7 @@ def calculateRelativeExpression( targetdir="results" ):
     print allfiles
     alldata = None
     psifile = os.path.join(targetdir,"psi_results.txt")
+    psibedfile = "globalpsi.bed"
     for tissue in allfiles : 
         print tissue, allfiles[tissue]
         tdata = read_csv( allfiles[tissue], sep="\t" )
@@ -207,13 +208,24 @@ def calculateRelativeExpression( targetdir="results" ):
     for idx, row in alldata[allfiles.keys()].iterrows() :
         subrow = [float(x) for x in row if x != "-"]
         if len(subrow) == 0 : psi.append("-")
-        else : psi.append(sum(subrow)/len(subrow))
+        else : psi.append("%.1f"%(sum(subrow)/len(subrow)))
 
     alldata["Global-PSI"] = psi
-    #alldata["Global-PSI"] = alldata[allfiles.keys()].mean(0,numeric_only=True)
-    print alldata.head()
-    alldata.to_csv(psifile, sep="\t", index=False )
+    alldata.rename(columns={'chrom':'#chrom'}, inplace=True)
+    print alldata["#chrom"].unique()
+    targetchromosomes = ["chr"+str(x) for x in range(1,25)+["X","Y"]]
+    cleandf = alldata[(alldata["#chrom"].isin(targetchromosomes)) &
+                     (alldata["start"] < alldata["end"])]
+    cleandf["chrom"] = [x[3:] if x[3:] in ["X","Y","M"] else int(x[3:])
+                        for x in cleandf["#chrom"]]
 
+    cleandf.sort(["chrom","start","end"], inplace=True)
+    #alldata["Global-PSI"] = alldata[allfiles.keys()].mean(0,numeric_only=True)
+    print cleandf.head()
+    cleandf.to_csv(psifile, sep="\t", index=False )
+    tcols = ["#chrom","start","end","Gene","isocov","isocount","Global-PSI"]
+    cleandf[tcols].to_csv(psibedfile, sep="\t", index=False )
+    return psibedfile
 # END calculateRelativeExpression
 
 ################################################################################
@@ -228,8 +240,10 @@ if __name__ == "__main__" :
         print " -s <chr:pos> retrieve relative expression for query"
         sys.exit(1)
 
+    targetdir = "results"
     testexprfile = "results/relativeexpr1.bed"
     exprfile = "results/relativeexpr.bed"
+    psibedfile = "globalpsi.bed"
     if optlist.has_key("-c") : 
         calculateRelativeExpression()
     else: 
@@ -240,7 +254,7 @@ if __name__ == "__main__" :
         OUT = open(tmpfile,"w")
         OUT.write("chr%s\t%s\t%d\n" %(chrom,pos,int(pos)+1))
         OUT.close()
-        a = pybedtools.BedTool(testexprfile)
+        a = pybedtools.BedTool(psibedfile)
         #resfile = "results/intersections.bed"
         #a.intersect(testexprfile).saveas(resfile)
         inter = a.intersect(tmpfile)
