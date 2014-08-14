@@ -324,7 +324,8 @@ if __name__ == "__main__" :
     elif dataset == "test2" :
         vcffile = path+"/test2/test2.vcf.gz"
     elif dataset == "onekg" :
-        vcffile = path+"/onekg/onekg.chimp.vcf.gz"
+        #vcffile = path+"/onekg/onekg.chimp.vcf.gz"
+        vcffile = path+"/onekg/onekg.vcf.gz"
     elif dataset == "daily" :
         #vcffile = path+"/daily/daily.chimp.vcf.gz"
         vcffile = path+"/daily/daily.vcf.gz"

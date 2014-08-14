@@ -108,7 +108,8 @@ def parseOutliers(outliers) :
 ################################################################################
 # pcaOutlierAnalysis
 ################################################################################
-def pcaOutlierAnalysis( bedfile, targetdir=None, force=False, annotcol ="Continent") :
+def pcaOutlierAnalysis( bedfile, targetdir=None, force=False, 
+                       annotcol ="Continent", tcols="1:2" ):
     print "Running pcaOutlierAnalysis" 
 
     filepath,basename,ext = hk.getBasename(bedfile)
@@ -116,9 +117,11 @@ def pcaOutlierAnalysis( bedfile, targetdir=None, force=False, annotcol ="Contine
     print "Using targetdir:",targetdir
     hk.makeDir(targetdir)
     fixedannotname = "GeographicRegions2" if annotcol == "GRsub" else annotcol
-    parfile,outliers,eigenvec,eigenval,regions = makeParFile(filepath,basename,
-                                                             targetdir=targetdir,
-                                                             annotcol=fixedannotname) 
+    eigfiles = makeParFile(filepath, basename, 
+                           targetdir=targetdir,
+                           annotcol=fixedannotname) 
+    outbase = "%s_%s" %(basename, tcols.replace(":","_"))
+    parfile,outliers,eigenvec,eigenval,regions = eigfiles
     if not os.path.exists(outliers) or force :
         print "Parfile:",parfile
         try :
@@ -155,22 +158,22 @@ def pcaOutlierAnalysis( bedfile, targetdir=None, force=False, annotcol ="Contine
         print "Error: Unknown annotation:",annotcol
 
     print "Regions:",regions
-    plotfile = "%s/%s.xtxt" % (targetdir, basename)
-    command = ["ploteig","-i",eigenvec,
+    plotfile = "%s/%s.xtxt" % (targetdir, outbase)
+    command = ["ploteig","-i",eigenvec,"-c",tcols,
                      "-p",":".join(regions),
                      "-x","-o",plotfile]
     print " ".join(command)
     print "Trying subprocess"
-    print "Making file:",basename,annotcol,".pdf"
+    print "Making file:",outbase,annotcol,".pdf"
     retval = subprocess.call(command)
-    retval = subprocess.call(["mv","%s.pdf"%basename, 
-                              "results/pcaplots/%s_%s.pdf" %(basename,annotcol)])
+    retval = subprocess.call(["mv","%s.pdf"%outbase, 
+                              "results/pcaplots/%s_%s.pdf" %(outbase,annotcol)])
     #print retval
     #print "Trying system!"
     #retval = os.system( " ".join(command) )
     #print retval
     twtable = "/home/escott/Packages/EIG5.0.2/POPGEN/twtable"
-    twout = "%s/%s.twout" % (targetdir, basename)
+    twout = "%s/%s.twout" % (targetdir, outbase)
     subprocess.call(["twstats","-t",twtable,"-i",eigenval,"-o",twout])
     outliersamps = parseOutliers(outliers)
     return outliersamps
@@ -277,7 +280,7 @@ def makeFstPlot( fstdata, annotcol, basename, targetdir ):
 # END makeFstPlot
 
 def calcFst( bedfile, targetdir, force=True, annotcol="Continent" ) :
-    print "Running pcaOutlierAnalysis" 
+    print "Running calcFst" 
 
     filepath,basename,ext = hk.getBasename(bedfile)
     targetdir = targetdir if targetdir is not None else filepath
@@ -507,7 +510,7 @@ if __name__ == "__main__":
     for annot in annotationcolumns :
         targetdir = os.path.join(filepath,"pca/"+annot)
         #fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
-        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot )
+        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="2:3" )
         print outliers
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )

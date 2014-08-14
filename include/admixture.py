@@ -44,7 +44,7 @@ def run_admixture( targetfile, K, bootstrap=False, forceFlag=False ) :
     if bootstrap :
         command = "admixture -B %s %s" % ( targetfile, K )
     else :
-        command = "admixture --cv %s %s" % ( targetfile, K )
+        command = "admixture -j4 --cv %s %s" % ( targetfile, K )
 
     runout = runCommand( command )
     OUT = open(logfile,"wb")
@@ -363,12 +363,12 @@ def plotAdmixture( admixdf, K, figbasename, sampleorder=None,
     if sampleorder is None :
         sampleorder = orderSamples( admixdf, K, levels, annotcol )
 
+    admixdf = admixdf[admixdf.IID.isin(sampleorder)]
     if any( [x not in levels for x in admixdf[annotcol].unique()] ):
         print "Levels :",levels
         print "Unique atts",admixdf[annotcol].unique()
         sys.exit(1)
 
-    admixdf = admixdf[admixdf.IID.isin(sampleorder)]
     admixdf_melt = melt( admixdf, id_vars=["IID",annotcol], 
                         value_vars=["K%d"%x for x in range(1,K+1)])
 
@@ -507,7 +507,7 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
         comporder = reorderComponents( prevdata, admixdf, K )
         admixdf.rename(columns=comporder,inplace=True)
         admixdf_melt = melt( admixdf, id_vars=["IID",annotcol], 
-                        value_vars=["K%d"%x for x in range(1,K+1)])
+                             value_vars=["K%d"%x for x in range(1,K+1)])
         admixdf_melt["currK"] = "K = "+str(K)
         alldata.append( admixdf_melt )
         plotAdmixture( admixdf, K, figbasename, sampleorder, tlevels, annotcol )
@@ -517,19 +517,18 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
     alldata = concat(alldata).reset_index(drop=True)
 
     plotAllAdmixture( alldata, maxK, figbasename, sampleorder, tlevels, annotcol )
+
+    #qfile,runout = run_admixture( bedfile, bestK, True, forceFlag )
+
+    runAdmixtureClustering(bedfile,bestK,True)
+    return bestK
+# End admixtureAnalysis
     #figurename = bedfile[:-4]+"_all.png"
     #print "Making figure:",figurename
     #grdevices.png(figurename, width=8, height=2*len(allplots),
                   #units="in",res=300)
     #gridextra.grid_arrange( *allplots )
     #grdevices.dev_off()
-    sys.exit(1)
-
-    qfile,runout = run_admixture( bedfile, bestK, True, forceFlag )
-
-    runAdmixtureClustering(bedfile,bestK,True)
-    return bestK
-# End admixtureAnalysis
 
 def seriousClean( vcffile, keepfile=None, rerun=False ):
     print "Running seriousClean"
@@ -600,9 +599,9 @@ def getLevels( annotcol, targetvcf ):
 # END getLevels
 
 def subsectionVCFbyPop( vcffile, sampleannot, targetdir, basename="test", 
-                       force=False, annotcol="Continent" ) :
+                       force=False, annotcol="Continent2" ) :
     allpopfiles = {}
-    for group, data in sampleannot.groupby("Continent") :
+    for group, data in sampleannot.groupby(annotcol) :
         pop = group.replace(" ","_")
         popdir = os.path.join(targetdir,pop)
         makeDir( popdir )
@@ -610,6 +609,7 @@ def subsectionVCFbyPop( vcffile, sampleannot, targetdir, basename="test",
         popfile = os.path.join(popdir, "%s_%s.txt" %(basename,pop))
         data[["Individual.ID"]].to_csv(popfile,sep="\t",index=False,header=False)
         allpopfiles[pop] = popfile
+
     print allpopfiles
 
     popvcfs = {}
@@ -668,8 +668,8 @@ if __name__ == "__main__":
 
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
     #vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
-    #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
-    vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
+    vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
+    #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
     #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     print "Using Vcffile:",vcffile
 
@@ -685,27 +685,31 @@ if __name__ == "__main__":
     filepath, filename, suffix = getBasename(targetvcf)
 
     # Run for all data together
+    runalldata=False
+    runpopulations=True
 
     levels, sampleannot = getLevels( annotcol, targetvcf )
-    keepfile = os.path.join(filepath, filename+".keeppats")
-    sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
-    bedfile = seriousClean( targetvcf, keepfile, False )
-    admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol )
-
-    # Run for all continents separately
-    popvcfs = subsectionVCFbyPop( targetvcf, sampleannot, filepath, filename )
-    for pop in popvcfs :
-        #targetdir, filename, suffix = getBasename(popvcfs[pop])
-        #targetpats = patientInfo.getPats( popvcfs[pop] )
-        #sampleannot = sampleAnnotation(targetpats)
-        levels, sampleannot = getLevels( annotcol, popvcfs[pop] )
-        #print "Targetpats:",targetpats
-        if len(sampleannot) < 15 : continue
+    if runalldata : 
         keepfile = os.path.join(filepath, filename+".keeppats")
         sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
-        bedfile = seriousClean( popvcfs[pop], keepfile, False )
-        print "Running pop:",pop,"vcf:",popvcfs[pop],"bed:",popvcfs[pop]
+        bedfile = seriousClean( targetvcf, keepfile, False )
         admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol )
+
+    elif runpopulations :
+        # Run for all continents separately
+        popvcfs = subsectionVCFbyPop( targetvcf, sampleannot, filepath, filename )
+        for pop in popvcfs :
+            #targetdir, filename, suffix = getBasename(popvcfs[pop])
+            #targetpats = patientInfo.getPats( popvcfs[pop] )
+            #sampleannot = sampleAnnotation(targetpats)
+            levels, sampleannot = getLevels( annotcol, popvcfs[pop] )
+            #print "Targetpats:",targetpats
+            if len(sampleannot) < 15 : continue
+            keepfile = os.path.join(filepath, filename+".keeppats")
+            sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
+            bedfile = seriousClean( popvcfs[pop], keepfile, False )
+            print "Running pop:",pop,"vcf:",popvcfs[pop],"bed:",popvcfs[pop]
+            admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol )
 
 
 

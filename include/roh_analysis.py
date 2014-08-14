@@ -248,10 +248,10 @@ def makeRohBoxPlots( rohfile, sampleannot, outprefix="./results/figures/rohbox" 
     print "indivstats:",indivstats.shape
     #print allintervals.head(10)
 
-    merged = merge( sampleannot[["Individual.ID","Continent","ethnicity"]], indivstats[["IID","KB","KBAVG","NSEG"]], right_on="IID", left_on="Individual.ID", how="right" )
-    merged = merged[merged.Continent.notnull()]
+    merged = merge( sampleannot[["Individual.ID","Continent2","ethnicity"]], indivstats[["IID","KB","KBAVG","NSEG"]], right_on="IID", left_on="Individual.ID", how="right" )
+    merged = merged[merged.Continent2.notnull()]
 
-    levels = merged[["Continent","ethnicity"]].drop_duplicates().sort('Continent')
+    levels = merged[["Continent2","ethnicity"]].drop_duplicates().sort('Continent2')
     levels = levels.ethnicity.unique().tolist()
     print "Levels",levels
 
@@ -262,13 +262,13 @@ def makeRohBoxPlots( rohfile, sampleannot, outprefix="./results/figures/rohbox" 
     r_dataframe = com.convert_to_r_dataframe(merged)
     s = robjects.FactorVector(r_dataframe.rx2("ethnicity"), levels=robjects.StrVector(levels))
     new_r_df = r_dataframe.cbind(s)
-    #new_r_df.colnames = robjects.StrVector(["Continent",feature,"ethnicity","Ethnicity"])
-    new_r_df.colnames = robjects.StrVector(['Individual.ID', 'Continent', 'ethnicity', 'IID', 'KB', 'KBAVG', 'NSEG','Ethnicity'])
+    #new_r_df.colnames = robjects.StrVector(["Continent2",feature,"ethnicity","Ethnicity"])
+    new_r_df.colnames = robjects.StrVector(['Individual.ID', 'Continent2', 'ethnicity', 'IID', 'KB', 'KBAVG', 'NSEG','Ethnicity'])
     #print robjects.r.head(new_r_df)
 
     p = ggplot2.ggplot(new_r_df) + \
                 ggplot2.aes_string(x = "Ethnicity",y="KB" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent)")) + \
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent2)")) + \
                 ggplot2.ggtitle("Comparison of ROH") + \
                 ggplot2.theme(**mytheme) + \
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) + \
@@ -284,7 +284,7 @@ def makeRohBoxPlots( rohfile, sampleannot, outprefix="./results/figures/rohbox" 
 
     p = ggplot2.ggplot(new_r_df) + \
                 ggplot2.aes_string(x = "Ethnicity",y="KBAVG" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent)")) + \
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent2)")) + \
                 ggplot2.ggtitle("ROH KBAVG") + \
                 ggplot2.theme(**mytheme) + \
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) + \
@@ -297,7 +297,7 @@ def makeRohBoxPlots( rohfile, sampleannot, outprefix="./results/figures/rohbox" 
 
     p = ggplot2.ggplot(new_r_df) + \
                 ggplot2.aes_string(x = "Ethnicity",y="NSEG" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent)")) + \
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Continent2)")) + \
                 ggplot2.ggtitle("Number of Segments") + \
                 ggplot2.theme(**mytheme) + \
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) + \
@@ -315,15 +315,16 @@ def makeRohCumPlot( rohfile, sampleannot, outprefix="results/rohcumplot" ) :
     allintervals = read_csv(rohfile,delim_whitespace=True)
     #indivstats = read_csv(rohfile+".indiv",delim_whitespace=True)
     #print "indivstats:",indivstats.shape
-    intdf = merge( sampleannot[["Individual.ID","Continent","ethnicity"]], allintervals[["IID","KB","NSNP","DENSITY"]], right_on="IID", left_on="Individual.ID", how="right" )
-    intdf = intdf[intdf.Continent.notnull()]
+
+    intdf = merge( sampleannot[["Individual.ID","Continent2","ethnicity"]], allintervals[["IID","KB","NSNP","DENSITY"]], right_on="IID", left_on="Individual.ID", how="right" )
+    intdf = intdf[intdf.Continent2.notnull()]
 
     allsizedist = []
     binstart = 1000
     bins = np.linspace(binstart, 15000, 100)
     binsize = bins[1] - bins[0]
     binskb = [binstart+binsize*i for i in range(len(bins)) ]
-    for region, rints in intdf.groupby("Continent") :
+    for region, rints in intdf.groupby("Continent2") :
         groups = rints.groupby(np.digitize(rints.KB, bins))
         sizedist = DataFrame([ [group,len(data)] for group,data in groups ], columns=["Bin","Freq"])
         allsizes = sizedist.Freq.tolist()
@@ -433,10 +434,10 @@ def exomeCoverage( rohfile, sampleannot, outprefix="results/rohcov", figureprefi
     print "Running exomeCoverage"
     rohdf = read_csv(rohfile,delim_whitespace=True)
     print "rohdf:",rohdf.shape
-    rohannot = merge( sampleannot[["Individual.ID","Continent","ethnicity"]], 
+    rohannot = merge( sampleannot[["Individual.ID","Continent2","ethnicity"]], 
                    rohdf[["IID","CHR","POS1","POS2","KB"]], right_on="IID", 
                    left_on="Individual.ID", how="right" )
-    rohannot = rohannot[rohannot.Continent.notnull()]
+    rohannot = rohannot[(rohannot.Continent2.notnull()) & (rohannot.Continent2 != "Unknown")]
 
     rohbedfile = "%s.bed" % outprefix
     print "Writing file:",rohbedfile
@@ -591,22 +592,29 @@ if __name__ == "__main__" :
         vcffile = path+"/daily/daily.vcf.gz"
     elif dataset == "eichler" :
         vcffile = path+"/eichler/eichler.vcf.gz"
-    elif dataset == "turks" :
-        vcffile = path+"/turks/turks.vcf.gz"
-    elif dataset == "variome" :
-        vcffile = path+"/variome/variome.clean.vcf.gz"
-    elif dataset == "variome1" :
-        vcffile = path+"/variome1/variome.clean.vcf.gz"
-    elif dataset == "hgdp" :
-        vcffile = path+"/hgdp/HGDP_938.vcf.gz"
-    elif dataset == "merged" :
-        vcffile = path+"/merged/merged.vcf.gz"
+    #elif dataset == "variome" :
+        #vcffile = path+"/variome/variome.clean.vcf.gz"
+    elif dataset == "merge1kg" :
+        vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
+    elif dataset == "mevariome" :
+        vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
+    #elif dataset == "variome1" :
+        #vcffile = path+"/variome1/variome.clean.vcf.gz"
+    #elif dataset == "hgdp" :
+        #vcffile = path+"/hgdp/HGDP_938.vcf.gz"
+    #elif dataset == "merged" :
+        #vcffile = path+"/merged/merged.vcf.gz"
     elif dataset == "casanova" :
         vcffile = path+"/casanova/casanova.snp.recal.vcf.gz"
+    else :
+        print "Error: Unknown dataset provided"
+        sys.exit(1)
 
-    sampleannot = read_csv("resources/annotation/patientannotation.ped", sep="\t")
-    hgdp = read_csv("resources/HGDP_ethnicgroups.txt",sep="\t")
-    sampleannot = merge(sampleannot, hgdp[["Ethnicity","Continent","Country"]], left_on="ethnicity",right_on="Ethnicity",how="left")
+    #sampleannot = read_csv("resources/annotation/patientannotation.ped", sep="\t")
+    #hgdp = read_csv("resources/HGDP_ethnicgroups.txt",sep="\t")
+    #sampleannot = merge(sampleannot, hgdp[["Ethnicity","Continent","Country"]], left_on="ethnicity",right_on="Ethnicity",how="left")
+    filepats = patientInfo.currentFilePats( vcffile )
+    sampleannot = sampleAnnotation(filepats)
 
     if optlist.has_key("-t") :
         #rohfile = "rawdata/test/roh/everything_set1.chr1.snp.clean.plink.filt.hom"
@@ -616,8 +624,8 @@ if __name__ == "__main__" :
         
         exomeCoverage( rohfile, sampleannot )
     else :
-        keepfile = "%s/%s/tokeep.txt" % (path, dataset)
-        assert os.path.exists( keepfile )
+        #keepfile = "%s/%s/tokeep.txt" % (path, dataset)
+        #assert os.path.exists( keepfile )
         calls = runRohAnalysis( vcffile, sampleannot, None )
         print calls
 

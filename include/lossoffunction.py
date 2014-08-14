@@ -192,7 +192,6 @@ def calcRegionAF( vardf, region ) :
     return region_burden/region_totals
 # End calcRegionAF
 
-
 def calcPairwisePvalues( tdf, factcol, groupcol=None, onetailed=False ) :
     pvals = []
     if groupcol is not None :
@@ -285,7 +284,7 @@ def rvisAnalysis( lofgenes, randgenes, targetdir, prefix ) :
     grdevices.dev_off()
 # END rvisAnalysis 
 
-def psiIntersect( vardata, bedfile ) :
+def psiIntersect_bedtools( vardata, bedfile ) :
     psibedfile = "resources/isoformexpress/globalpsi.bed"
 
     tvars = vardata[["chrom","pos"]].copy()
@@ -305,13 +304,46 @@ def psiIntersect( vardata, bedfile ) :
                     columns=["chrom","start","end","Gene","isocov","isocount","PSI"])
     print res.head()
     return res
+# END psiIntersect_bedtools
+
+def psiIntersect( vardata, psiannotatedfile, force=False ) :
+
+    #psiannotatedfile = os.path.join(targetdir, basename+"_psi.tsv")
+    if os.path.exists(psiannotatedfile) and not force:
+        print "Warning: file exists. skipping..."
+        final = read_csv( psiannotatedfile, sep="\t" )
+
+    psibedfile = "resources/isoformexpress/globalpsi.bed"
+    psiranges = read_csv(psibedfile, sep="\t")
+    psichrs = psiranges.groupby("#chrom")
+    psivals = []
+    for chrom,pos,gene in vardata[["chrom","pos","Gene"]].values :
+        chrdata = psichrs.get_group("chr"+str(chrom)) 
+        tregions = chrdata[( psiranges["start"] < pos ) & 
+                 (psiranges["end"] > pos )]
+        #print chrom,pos
+        #print tregions.head()
+        if len(tregions) == 1 :
+            psivals.append( tregions["Global-PSI"].tolist()[0] )
+        elif len(tregions) > 1 :
+            print "warning: more than one match"
+            if gene in tregions.Gene.tolist() :
+                psivals.append( tregions[tregions.Gene == gene]["Global-PSI"].tolist()[0] )
+            else :
+                psivals.append( tregions["Global-PSI"].tolist()[0] )
+        else :
+            psivals.append( "-" )
+
+    vardata["PSI"] = psivals
+    vardata.to_csv( psiannotatedfile, sep="\t", index=False )
+    return vardata
 # END psiIntersect
 
 def psiAnalysis( lofvariants, randvariants, targetdir, prefix ) :
-    lofbed = "results/tmp/%s_lofsnps.bed" %prefix
-    randbed = "results/tmp/%s_randsnps.bed" %prefix
-    lofpsi = psiIntersect( lofvariants, lofbed )
-    randpsi = psiIntersect( randvariants, randbed )
+    #lofbed = "results/tmp/%s_lofsnps.bed" %prefix
+    #randbed = "results/tmp/%s_randsnps.bed" %prefix
+    #lofpsi = psiIntersect_bedtools( lofvariants, lofbed )
+    #randpsi = psiIntersect_bedtools( randvariants, randbed )
 
     print lofpsi.shape
     print randpsi.shape
@@ -323,14 +355,8 @@ def psiAnalysis( lofvariants, randvariants, targetdir, prefix ) :
 if __name__ == "__main__" :
 
     os.chdir("..")
-    #sampleannot = read_csv("resources/annotation/patientannotation.ped", sep="\t")
-    #sampleannot.index = sampleannot["Individual.ID"].tolist()
-    sampleannot = sampleAnnotation()
+    #sampleannot = sampleAnnotation()
     # Make X
-    prefix = "everything_set1.chr1.snp.clean"
-    prefix = "merged.clean"
-
-    prefix = "test"
     #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
     varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
     targetvarfile = hk.copyToSubDir( varfile, "lof" )
@@ -338,20 +364,39 @@ if __name__ == "__main__" :
     targetdir, basename, suffix = hk.getBasename( targetvarfile )
     prefix = basename[:basename.find("_genes")]
 
-    vardf = read_csv(targetvarfile,sep="\t")
+    lofpsiannotatedfile = os.path.join(targetdir, basename+"_lof_psi.tsv")
+    randpsiannotatedfile = os.path.join(targetdir, basename+"_rand_psi.tsv")
+    print "LoF file:",lofpsiannotatedfile
+    print "Rand file:",randpsiannotatedfile
+    force = True
 
-    print vardf.shape
-    lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
-    print lofvariants.shape
-    lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
-    lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
+    vardf = read_csv(targetvarfile,sep="\t")
+    # make Lof Variant Set
+    if not os.path.exists( lofpsiannotatedfile ) :
+        lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
+        print lofvariants.shape
+        lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
+        lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
+        psiIntersect( lofvariants, lofpsiannotatedfile )
+    else :
+        lofvariants = read_csv( lofpsiannotatedfile, sep="\t" )
+
+    # make Rand Variant Set
+    if not os.path.exists( randpsiannotatedfile ) or force:
+        randrows = random.sample(vardf.index, len(lofvariants))
+        randvariants = vardf.ix[randrows]
+        randvariants["me_af"] = calcRegionAF(randvariants,"Middle East")
+        randvariants["ceu_af"] = calcRegionAF(randvariants,"Europe")
+        psiIntersect( randvariants, randpsiannotatedfile, force )
+    else :
+        randvariants = read_csv( randpsiannotatedfile, sep="\t" )
+
+    randvariants["Vclass"] = "Random"
+    lofvariants["Vclass"] = "LoF"
 
     lofgenes = DataFrame({'Gene':lofvariants.Gene.unique()})
     randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
 
-
-    randrows = random.sample(vardf.index, len(lofvariants))
-    randvariants = vardf.ix[randrows]
 
     # Intersect with Synthetic Lethal list
     sldata = read_csv("resources/sl_genelist.txt", sep="\t",
@@ -364,10 +409,32 @@ if __name__ == "__main__" :
     kegggenes = read_csv("resources/keggPathway.txt", sep="\t")
 
     # Intersect with RVIS
-    rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
+    #rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
   
     # Intersect with PSI
     #psiAnalysis( lofvariants, randvariants, targetdir, prefix )
+    tcols = ["Gene","PSI","Vclass"]
+    allpsi = concat( [lofvariants[tcols], randvariants[tcols]] ).reset_index()
+    print allpsi.head()
+    allpsi = allpsi[allpsi.PSI != "-"]
+    allpsi.PSI = allpsi.PSI.astype("float")
+    r_dataframe = com.convert_to_r_dataframe(allpsi)
+    #r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="PSI") +
+                ggplot2.geom_density(ggplot2.aes_string(colour="factor(Vclass)")) +
+                ggplot2.ggtitle("PSI distribution") +
+                ggplot2.scale_y_continuous("Density") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_psidensity.png" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.png(figname)
+    p.plot()
+    grdevices.dev_off()
+
+
 
     sys.exit(1)
     print len(vardf["Middle East"].isnull())

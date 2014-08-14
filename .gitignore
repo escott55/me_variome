@@ -12,6 +12,7 @@
 .Rhistory
 Rplots.pdf
 *.bak
+plink.*
  
 # Video/Image Files #
 #####################
