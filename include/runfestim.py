@@ -416,7 +416,7 @@ def plotIBC( ibcfile, factor="continent" ):
                 #ggplot2.stat_smooth(method="lm", se=False)
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_festim_ibc.png" % (basename,factor)
+    figname = "results/figures/festim/%s_%s_festim_ibc.png" % (basename,factor)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -462,7 +462,7 @@ def plotPlinkIBC( ibcfile, factor="continent" ):
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_plink_ibc.png" % (basename, factor)
+    figname = "results/figures/festim/%s_%s_plink_ibc.png" % (basename, factor)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -511,7 +511,7 @@ def ibcCorrelation( plinkibc, festimibc, factor="continent" ):
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_ibc.png" % (basename,factor)
+    figname = "results/figures/festim/%s_%s_ibc.png" % (basename,factor)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -545,7 +545,7 @@ def ibcCorrelation( plinkibc, festimibc, factor="continent" ):
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_ibccorr.png" % (basename,factor)
+    figname = "results/figures/festim/%s_%s_ibccorr.png" % (basename,factor)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -603,7 +603,7 @@ def ibcCountryCorrelation( ibcdata, basename ):
     print [x for x in ibclist if x not in countrylist]
     withrates = merge(ibcall, regionrates, on="Continent", how="left")
     withrates = merge(withrates, countryrates[["Country","CountryConsangPercent"]], left_on="Origin", right_on="Country", how="inner")
-    withrates.to_csv("results/%s_continent_ibcrates.txt" %basename,sep="\t",index=False)
+    withrates.to_csv("results/ibc/%s_continent_ibcrates.txt" %basename,sep="\t",index=False)
     print "Making continent ibcrates file"
     print withrates.shape
     withrates.F = withrates.F.map(float)
@@ -619,7 +619,7 @@ def ibcCountryCorrelation( ibcdata, basename ):
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_percent_ibc.png" % (basename,"continent")
+    figname = "results/figures/festim/%s_%s_percent_ibc.png" % (basename,"continent")
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -632,7 +632,7 @@ def ibcCountryCorrelation( ibcdata, basename ):
     withrates = merge(ibcall, countryrates, left_on="Origin", right_on="Country", how="inner")
     #withrates = withrates[withrates["ConsangPercent"].notnull()]
     withrates["CountryConsangPercent"] = withrates["CountryConsangPercent"].fillna(0).astype(int)
-    withrates.to_csv("results/%s_country_ibcrates.txt" %basename,sep="\t",index=False)
+    withrates.to_csv("results/ibc/%s_country_ibcrates.txt" %basename,sep="\t",index=False)
     print "Making country ibcrates file"
     print withrates.head(10)
     withrates.F = withrates.F.map(float)
@@ -648,7 +648,7 @@ def ibcCountryCorrelation( ibcdata, basename ):
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
     if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/%s_%s_percent_ibc.png" % (basename,"Origin")
+    figname = "results/figures/festim/%s_%s_percent_ibc.png" % (basename,"Origin")
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()

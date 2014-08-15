@@ -387,6 +387,7 @@ def addSampleAnnotation( targetdf, mergecol=None, update=False ):
         targetdf.update( patientdata )
         return targetdf
 
+    assert mergecol is not None
     alldata = merge(targetdf, patientdata[keepcols], left_on=mergecol, 
                     right_on="fixed_id", how="left")
     return alldata

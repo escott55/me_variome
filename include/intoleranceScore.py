@@ -161,10 +161,10 @@ def calculateRVIS( genecounts, prefix=None ):
     resid = list(rstats.rstudent(model_x))
     genecounts["StdResid"] = resid
     genecounts["Colour"] = "Innerquartile"
-    lowquantile = genecounts.StdResid.quantile(.02)
-    highquantile = genecounts.StdResid.quantile(.98)
-    #genecounts["Colour"][genecounts.StdResid <= lowquantile] = "2% most intolerant"
-    #genecounts["Colour"][genecounts.StdResid >= highquantile] = "2% least intolerant"
+    lowquantile = genecounts.StdResid.quantile(.05)
+    highquantile = genecounts.StdResid.quantile(.95)
+    genecounts["Colour"][genecounts.StdResid <= lowquantile] = "2% most intolerant"
+    genecounts["Colour"][genecounts.StdResid >= highquantile] = "2% least intolerant"
     #print "Allcounts head:",genecounts.head(20)
     #print "Allcounts shape:",genecounts.shape
     #print genecounts[genecounts.Colour != "Innerquartile"].head(20)
@@ -182,7 +182,7 @@ def calculateRVIS( genecounts, prefix=None ):
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
     if prefix is None : prefix = "test"
     if prefix.find(" ")>=0 : prefix = prefix.replace(" ","_")
-    figname = "results/figures/%s_rvis_lm.png" % prefix
+    figname = "results/figures/rvis/%s_rvis_lm.png" % prefix
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -252,7 +252,7 @@ def makeGeneCounts( prefix, regions, regionlookup, vclasses=["HIGH"], maf=0.0 ) 
 ################################################################################
 # makeGeneCounts1
 ################################################################################
-def makeGeneCounts1( prefix, regions, vclasses=[1], maf=0.0 ) :
+def makeGeneCounts1( prefix, regions, vclasses=[1], minmaf=0.0 ) :
     varfile = prefix+"_genes.tsv"
     csvread = csv.reader(open(varfile),delimiter="\t")
     header = csvread.next()
@@ -261,11 +261,16 @@ def makeGeneCounts1( prefix, regions, vclasses=[1], maf=0.0 ) :
     for row in csvread :
         s = Series(data=row,index=header)
         if s["vclass"] not in vclasses : continue
-        if s["AF"] < maf : continue
+        #if s["AF"] < minmaf : continue
         for region in foundregions : 
-            s[region] = sum([int(x) for x in s[region].split(":")[1:]])
+            ref,het,hom = [int(x) for x in s[region].split(":")]
+            regionaf = (2*hom+het) / (2.*(ref+het+hom))
+            if regionaf < minmaf : continue
+            #s[region] = sum([int(x) for x in s[region].split(":")[1:]])
+            regseries = Series({"chrom":s["chrom"],"pos":s["pos"],"Gene":s["Gene"],
+                        "AF":regionaf,"region":region,"samps":(hom+het)})
+            allvars.append(regseries)
         #print s[["chrom","pos","Gene"]+foundregions]
-        allvars.append(s[["chrom","pos","Gene"]+foundregions])
 
     allvars = DataFrame(allvars)
     #print allvars.head(10)

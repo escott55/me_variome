@@ -156,6 +156,7 @@ def run_vcftools_plink( vcffile, outdir=None, keeplist=None, force=False ) :
             if len(patient) == 0 or patient[0] == "#" :
                 continue
             otheroptions += ' --indv "%s"' % patient.strip()
+        #otheroptions += ' --keep %s' % keeplist
     elif os.path.exists( removefile ):
         print "Remove File:",removefile
         f = open( removefile, "r" )
@@ -172,10 +173,10 @@ def run_vcftools_plink( vcffile, outdir=None, keeplist=None, force=False ) :
     # snps <filename> include snps based on list of ids
     command = "vcftools --gzvcf %s" \
         " --remove-indels --min-alleles 2 --max-alleles 2" \
-        " --maf .002" \
         " %s" \
         " --plink-tped --out %s" \
         % ( vcffile, otheroptions, plinkfile )
+        #" --maf .002" \
         #" --remove-filtered-geno-all " \
         #" --FILTER-summary"\
         #" --plink-tped --out %s" \

@@ -97,7 +97,7 @@ def regioncountPlots( regioncounts, factor="region", figureprefix="results/figur
 # end regioncountPlots
 
 def singleDatasetAnalysis(prefix, sampleannot) :
-    statsfile = "./results/%s_regioncounts.txt"%prefix
+    statsfile = "./results/lof/%s_regioncounts.txt"%prefix
     print "Writing statsfile:",statsfile
     regioncounts = readVariantSet1( statsfile, prefix, sampleannot, vclasses=[5], maxaf=.1, force=True )
 
@@ -115,7 +115,7 @@ def singleDatasetAnalysis(prefix, sampleannot) :
 def anotherSingleDatasetAnalysis( varclasses=[4], figureprefix="results/figures/variome.clean" ) :
     prefix = "variome.clean"
     vclass_str = "(%s)" % ",".join([str(x) for x in varclasses])
-    statsfile = "./results/%s_regioncounts.txt"%prefix
+    statsfile = "./results/lof/%s_regioncounts.txt"%prefix
     print "Writing statsfile:",statsfile
     regioncounts = readVariantSet1( statsfile, prefix, sampleannot, 
                                    vclasses=varclasses, maxaf=.1, force=True )
@@ -311,7 +311,8 @@ def psiIntersect( vardata, psiannotatedfile, force=False ) :
     #psiannotatedfile = os.path.join(targetdir, basename+"_psi.tsv")
     if os.path.exists(psiannotatedfile) and not force:
         print "Warning: file exists. skipping..."
-        final = read_csv( psiannotatedfile, sep="\t" )
+        finaldf = read_csv( psiannotatedfile, sep="\t" )
+        return finaldf
 
     psibedfile = "resources/isoformexpress/globalpsi.bed"
     psiranges = read_csv(psibedfile, sep="\t")
@@ -349,6 +350,27 @@ def psiAnalysis( lofvariants, randvariants, targetdir, prefix ) :
     print randpsi.shape
 # END psiAnalysis
 
+def plotPSIClasses( allpsi, targetdir, prefix ):
+    print allpsi.head()
+    allpsi = allpsi[allpsi.PSI != "-"]
+    allpsi.PSI = allpsi.PSI.astype("float")
+    r_dataframe = com.convert_to_r_dataframe(allpsi)
+    #r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="PSI") +
+                ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)")) +
+                ggplot2.ggtitle("PSI distribution") +
+                ggplot2.scale_y_continuous("Density") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_psiclassdensity.png" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.png(figname)
+    p.plot()
+    grdevices.dev_off()
+# END plotPSIClasses
+
 ################################################################################
 # Main
 ################################################################################
@@ -364,13 +386,20 @@ if __name__ == "__main__" :
     targetdir, basename, suffix = hk.getBasename( targetvarfile )
     prefix = basename[:basename.find("_genes")]
 
-    lofpsiannotatedfile = os.path.join(targetdir, basename+"_lof_psi.tsv")
-    randpsiannotatedfile = os.path.join(targetdir, basename+"_rand_psi.tsv")
+    psiannotatedfile = os.path.join(targetdir, prefix+"_psi.tsv")
+    print "Writing file:", psiannotatedfile
+    vardf = read_csv(targetvarfile,sep="\t")
+    vardf = psiIntersect( vardf, psiannotatedfile )
+    print vardf.head(10)
+    plotPSIClasses( vardf, targetdir, prefix )
+    sys.exit(1)
+
+    lofpsiannotatedfile = os.path.join(targetdir, prefix+"_lof_psi.tsv")
+    randpsiannotatedfile = os.path.join(targetdir, prefix+"_rand_psi.tsv")
     print "LoF file:",lofpsiannotatedfile
     print "Rand file:",randpsiannotatedfile
     force = True
 
-    vardf = read_csv(targetvarfile,sep="\t")
     # make Lof Variant Set
     if not os.path.exists( lofpsiannotatedfile ) :
         lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]

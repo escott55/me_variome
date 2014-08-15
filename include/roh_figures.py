@@ -203,6 +203,53 @@ def percentDensity( allbases, sampleannot, figureprefix=None ) :
 
 # END percentDensity
 
+################################################################################
+################################################################################
+def makeRohCumsumPlot( rohfile, sampleannot, outprefix="results/rohcumplot" ) :
+    allintervals = read_csv(rohfile,delim_whitespace=True)
+    #indivstats = read_csv(rohfile+".indiv",delim_whitespace=True)
+    #print "indivstats:",indivstats.shape
+
+    intdf = merge( sampleannot[["Individual.ID","Continent2","ethnicity"]], 
+                  allintervals[["IID","KB","NSNP","DENSITY"]], right_on="IID", 
+                  left_on="Individual.ID", how="right" )
+    intdf = intdf[intdf.Continent2.notnull()]
+
+    allsizedist = []
+    binstart = 1000
+    bins = np.linspace(binstart, 15000, 100)
+    binsize = bins[1] - bins[0]
+    binskb = [binstart+binsize*i for i in range(len(bins)) ]
+    for region, rints in intdf.groupby("Continent2") :
+        groups = rints.groupby(np.digitize(rints.KB, bins))
+        sizedist = DataFrame([ [group,len(data)] for group,data in groups ], columns=["Bin","Freq"])
+        allsizes = sizedist.Freq.tolist()
+        lentotal = float(sum( allsizes ))
+        sizedist["CumProp"] = [sum(allsizes[:i])/lentotal for i in range(1,len(allsizes)+1) ]
+        sizedist["RohSize"] = [binskb[i-1] for i in sizedist.Bin.tolist()]
+        sizedist["Region"] = region
+        allsizedist.append(sizedist)
+
+    allsizedist = concat( allsizedist ).reset_index(drop=True)
+    #print allsizedist[allsizedist.Region == "Middle East"].tail()
+    r_dataframe = com.convert_to_r_dataframe(allsizedist)
+
+    p = ggplot2.ggplot(r_dataframe) + \
+                ggplot2.aes_string(x = "RohSize",y="CumProp", colour="factor(Region)" ) + \
+                ggplot2.geom_point() + ggplot2.geom_line() + \
+                ggplot2.ggtitle("Cumulative Proportion of ROH by Length") + \
+                ggplot2.theme(**mytheme) + \
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) + \
+                ggplot2.scale_x_continuous("ROH Length")+ \
+                ggplot2.scale_y_continuous("Cumulative Proportion") #+ \
+                #ggplot2.scale_x_log10("ROH Length")+ \
+
+    print "Writing file %s_rohcumul.png" % outprefix
+    grdevices.png("%s_rohcumul.png"%outprefix)
+    p.plot()
+    grdevices.dev_off()
+# END makeRohCumsumPlot
+
 def plotDelVars( rohvars ) :
     r_dataframe = com.convert_to_r_dataframe(rohvars)
     p = (ggplot2.ggplot(r_dataframe) +

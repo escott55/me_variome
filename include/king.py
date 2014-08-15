@@ -131,7 +131,7 @@ def seriousClean( vcffile, rerun=False ):
     # Annotation Outliers
     vcfpats = patientInfo.getPats( vcffile )
     vcfpats = DataFrame({'Individual.ID':vcfpats})
-    vcfpats = addSampleAnnotation( vcfpats )
+    vcfpats = addSampleAnnotation( vcfpats, mergecol="Individual.ID" )
     sampleannot = vcfpats[(vcfpats.Continent2.notnull() 
                               & (vcfpats.Continent2 != "Unknown"))]
 
@@ -331,8 +331,9 @@ if __name__ == "__main__":
     # Change running directory
     os.chdir("..")
 
-    vcffile = "./rawdata/mevariome/variome.vcf.gz"
-    basename = "variome"
+    #vcffile = "./rawdata/mevariome/variome.vcf.gz"
+    vcffile = "./rawdata/onekg/qc/onekg.sclean.vcf.gz"
+    basename = "onekg"
     #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
 

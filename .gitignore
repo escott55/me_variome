@@ -39,6 +39,7 @@ docs/*
 *.dat
 *.tped
 *.bed
+*.rpt
 *.gz
 *.gtf
 *.bz2

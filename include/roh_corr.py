@@ -135,6 +135,37 @@ def exomeCov( bedpath, targetdir, sampleannot, force=False, targetsamples=None,
     return allbases, exometotals
 # END exomeCov
 
+def collapseBedFiles( bedpath, targetdir, targetsamples=None, outprefix="h3m2", 
+                     force=False ): 
+    print "Running collapseBedFiles"
+    targetfile = os.path.join( targetdir, outprefix+"_all.bed" )
+
+    if os.path.exists(targetfile) and not force:
+        print "Warning: final file already exists:",targetfile,". skipping..."
+        return targetfile
+
+    print "Making file:",targetfile
+    rawrohbedfiles = glob.glob( os.path.join( bedpath, "*.bed" ) )
+    alldata = []
+    for bedfile in rawrohbedfiles : 
+        filepath, filename = os.path.split(bedfile)
+        sample = filename[:filename.find("_1e")]
+        #print sample
+        if targetsamples is not None :
+            if sample not in targetsamples: 
+                print "Error: skipping sample:",sample
+                continue
+        print "Sample passed!",sample
+        regions = read_csv( bedfile, sep="\t", header=None, 
+                           names=["chrom","start","end","cnt","vars"])
+        regions["sample"] = sample
+        alldata.append( regions[["chrom","start","end","sample"]] )
+
+    alldata = concat( alldata )
+    alldata.to_csv(targetfile, header=None, sep="\t" )
+    return targetfile
+# END collapseBedFiles
+
 ################################################################################
 # Read all h3m2 files
 # Calculate exome coverage for h3m2 files
@@ -144,23 +175,30 @@ def exomeCov( bedpath, targetdir, sampleannot, force=False, targetsamples=None,
 ################################################################################
 if __name__ == "__main__" :
     os.chdir("..")
-    bedpath = "/home/escott/workspace/variome/results/roh_h3m2/raw/"
-    exomepath = "/home/escott/workspace/variome/results/roh_h3m2/exome/"
+    basedir = "/home/escott/workspace/variome/results/roh_h3m2/"
+    bedpath = os.path.join(basedir,"raw/")
+    exomepath = os.path.join(basedir,"exome/")
+    figuredir = "results/figures/roh/h2m2/"
     
-    sampleannot = sampleAnnotation()
     outprefix = "h3m2"
     prefix = "test"
     prefix = "meceu"
     targetsamples= [x.strip() 
                     for x in open("./rawdata/mergedaly/qc/meceu.finalpats").readlines() 
                     if len(x) > 0]
+    sampleannot = sampleAnnotation(targetsamples)
     allbases, exometotals = exomeCov( bedpath, exomepath, sampleannot, force=False, 
-                                     targetsamples=targetsamples,outprefix=outprefix, )
+                                     targetsamples=targetsamples, outprefix=outprefix )
 
     percentDensity( allbases, sampleannot, outprefix )
     #percentAnalysis( allbases, exometotals, outprefix )
     percentAnalysisRegions( allbases, exometotals, sampleannot, outprefix )
 
+    allrohfile = collapseBedFiles(bedpath, basedir, targetsamples=targetsamples, 
+                                  outprefix=outprefix, force=False)
+    makeRohCumsumPlot( allrohfile, sampleannot, os.path.join(figuredir,prefix) )
+
+    sys.exit(1)
     print allbases.head(10)
 
     #prefix = "variome1"
@@ -176,20 +214,21 @@ if __name__ == "__main__" :
     allbases["Algorithm"] = "H3M2"
     allbases2["Algorithm"] = "Plink"
     print allbases2.shape
+
     keepcols = ["Individual.ID","percent"]
     mrg = merge( allbases[keepcols], allbases2[keepcols], on="Individual.ID" )
     mrg.percent_x = mrg.percent_x.map(float)
     mrg.percent_y = mrg.percent_y.map(float)
-    percents_annot = merge(mrg, sampleannot[["Individual.ID","Continent","Origin"]], on="Individual.ID")
+    percents_annot = merge(mrg, sampleannot[["Individual.ID","Continent2","Origin"]], on="Individual.ID")
 
-    print percents_annot
-    #print mrg.shape
-    #print mrg.head(10)
+    print hk.dfTable(percents_annot.Continent2)
+    percents_annot = percents_annot[ percents_annot.Continent2.isin(
+                                    ["East Asia","Europe","Middle East","Africa"]) ]
 
     print "Alldata for IBC correlation"
     r_dataframe = com.convert_to_r_dataframe(percents_annot)
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x = "percent_x",y="percent_y", colour="factor(Continent)") +
+                ggplot2.aes_string(x = "percent_x",y="percent_y", colour="factor(Continent2)") +
                 ggplot2.geom_point() +
                 ggplot2.ggtitle("Correlation between Inbreeding Coefficients") +
                 ggplot2.scale_x_continuous("H3M2 Exome coverage (%)") +
@@ -200,21 +239,22 @@ if __name__ == "__main__" :
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
-    figname = "results/figures/roh/%s_ibccorr.png" % (prefix)
+    figname = "%s/%s_ibccorr.png" % (figuredir,prefix)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
     grdevices.dev_off()
 
+    sys.exit(1)
     keepcols = ["Individual.ID","percent","Algorithm"]
     percents_annot = merge(concat([allbases[keepcols],allbases2[keepcols]]), 
-                           sampleannot[["Individual.ID","Continent","Origin"]], 
+                           sampleannot[["Individual.ID","Continent2","Origin"]], 
                            on="Individual.ID")
-    percents_annot = percents_annot[percents_annot.Continent.isin(
-                                    ["Europe","Middle East","South Asia"])]
+    percents_annot = percents_annot[percents_annot.Continent2.isin(
+                                    ["Europe","Middle East","Africa"])]
     r_dataframe = com.convert_to_r_dataframe(percents_annot)
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x = "factor(Continent)",y="percent", colour="factor(Continent)") +
+                ggplot2.aes_string(x = "factor(Continent2)",y="percent", colour="factor(Continent2)") +
                 ggplot2.geom_boxplot() +
                 ggplot2.ggtitle("Runs of Homozygosity Exome overlap\nBetween Algorithms") +
                 ggplot2.facet_grid(robjects.Formula('. ~ Algorithm')) +
@@ -227,7 +267,7 @@ if __name__ == "__main__" :
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
-    figname = "results/figures/roh/%s_ibccorr_box.png" % (prefix)
+    figname = "%s/%s_ibccorr_box.png" % (figuredir,prefix)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -248,7 +288,7 @@ if __name__ == "__main__" :
                 ggplot2.facet_grid(robjects.Formula('. ~ Algorithm')) +
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
                 ggplot2.theme(**mytheme) )
-    figname = "results/figures/roh/%s_ibccorr_geobox.png" % (prefix)
+    figname = "%s/%s_ibccorr_geobox.png" % (figuredir,prefix)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()

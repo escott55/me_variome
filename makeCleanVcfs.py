@@ -53,6 +53,32 @@ def imputeVars( vcffile, pedfile, prefix="test" ) :
     stdout = subprocess.check_output(command, stderr=subprocess.STDOUT)
 # END imputeVars
 
+def vcftools_to_plink( vcffile, keeplist, force=False):
+    targetdir, filename, suffix = hk.getBasename(vcffile)
+    plinkfile = os.path.join(targetdir,filename+".plink")
+        
+    finalped = plinkfile+".tped"
+    if os.path.exists( finalped )  and not force :
+        print "Warning file already exists:",finalped,"skipping!"
+        return finalped
+
+    command = ["vcftools","--gzvcf",vcffile,
+                "--keep",keeplist,
+                "--plink-tped","--out",plinkfile]
+        #" --maf .002" \
+        #" --remove-filtered-geno-all " \
+        #" --FILTER-summary"\
+        #" --plink-tped --out %s" \
+        #" --snps %s" \
+        #" --min-meanDP 4 --minQ 20" \
+        #" --thin 10" \
+
+    print " ".join(command)
+    runout = subprocess.check_output( command )
+    
+    return finalped
+# END vcftools_to_plink
+
 ################################################################################
 # mad
 ################################################################################
@@ -96,7 +122,12 @@ def popOutliers( vcffile, outprefix=None ) : #, sampleannot
         outliers = istats[["ID",col]][[isOutlier(x,mean,std) for x in istats[col].tolist()]]
         for out,val in outliers[["ID",col]].values :
             alloutliers.append([out,val,col,mean,std])
-    alloutliers = DataFrame( alloutliers, columns=["ID","Value","Col","Mean","STD"])
+
+    if len(alloutliers) > 0 :
+        alloutliers = DataFrame( alloutliers, columns=["ID","Value","Col","Mean","STD"])
+    else :
+        alloutliers = DataFrame( columns=["ID","Value","Col","Mean","STD"] )
+
     #print "Shape:",alloutliers.shape
     print "Going to remove",len(alloutliers.ID.unique()),"samples"
     print "Writing outlier file:",outlierfile
@@ -165,10 +196,12 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
                        if len(x.strip()) > 0])
 
     qcoutliers = popOutliers( vcffile, targetdir )
+    print "Finished popOutliers"
 
     filepats = patientInfo.currentFilePats( vcffile )
     beforepatsfile = outprefix+".beforepats"
     fp_annot = addSampleAnnotation( DataFrame({'filepats':filepats}), mergecol="filepats" )
+
     print fp_annot.head()
     print "Writing filter file", beforepatsfile
     fp_annot[["filepats","Continent","GeographicRegions2"]].to_csv( 
@@ -189,10 +222,20 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     #unrelatedfile = vcftools.identifyUnrelatedSamples( cleanvcffile, targetdir, force=force )
     unrelatedfile, famrelfile, interrelfile = king.king_workflow( cleanvcffile, force )
 
+    unrelatedkeepfile = outprefix+".unrelpats"
+    OUT = open( unrelatedkeepfile, "w")
+    for row in csv.reader(open(unrelatedfile), delimiter="\t") :
+        if len(row) <= 1 : continue
+        OUT.write(row[1]+"\n") 
+    OUT.close()
+
     # to Tped, filter out indels, non-bi-allelic, maf < .002
-    tpedfile = pop.run_vcftools_plink( cleanvcffile, force=force, 
-                                      keeplist=unrelatedfile )
+    #tpedfile = pop.run_vcftools_plink( cleanvcffile, force=force, 
+                                      #keeplist=unrelatedfile )
+    tpedfile = vcftools_to_plink( cleanvcffile, unrelatedkeepfile, force=force)
     # convert to bed file
+    print "$"*50
+    print "got to here"
     bedfile = pop.run_plink_convert(tpedfile, force=force)
 
     # PCA outlier analysis
