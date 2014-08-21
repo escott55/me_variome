@@ -315,7 +315,7 @@ def qqplot( pvector, ptitle="Quantile-quantile plot of p-values", spartan=False,
 ######################################################################
 # parseClinVar
 ######################################################################
-def parseClinVar( vfilter=5) :
+def parseClinVar( vfilter=5 ):
     clinvarvcf = "/home/escott/snpEff/clinvar_20140303.vcf.gz"
     clindata = []
     for row in csv.reader( hk.CommentStripper(hk.conditionalOpen(clinvarvcf)), delimiter="\t" ) :
@@ -349,9 +349,8 @@ def sampleAnnotation(targetpats=None, annotationfile=ANNOTATIONFILE ) :
     sampleannot["GeographicRegions2"] = geographicRegions2(sampleannot)
     sampleannot["Continent2"] = ["Middle East" if x in target_geographic_regions_me 
                                  else x for x in sampleannot["GeographicRegions"]]
-    #( sampleannot.Origin.tolist(), 
-                                                        #sampleannot.ethnicity.tolist(),
-                                                        #sampleannot.continent)
+    #( sampleannot.Origin.tolist(), #sampleannot.ethnicity.tolist(), #sampleannot.continent)
+    #print sampleannot[sampleannot.Continent2 == "South Asia"]
     if targetpats is not None :
         print "Targetpats",len(targetpats),targetpats[:10]
         sampleannot = sampleannot[sampleannot["Individual.ID"].isin( targetpats )]
@@ -508,7 +507,7 @@ def readVariantSet2( statsfile, prefix, sampleannot, vclasses=["HIGH"], force=Fa
 if __name__ == "__main__" :
 
     patientlistfile = "/home/escott/workspace/variome/rawdata/merge1kg/allsamples.txt"
-    
+    parseClinVar( vfilter=5 )   
     samples = read_csv( patientlistfile, sep="\t", header=None, names=["sample"] )
     annotated = addSampleAnnotation( samples, mergecol="sample" )
     print annotated.head()

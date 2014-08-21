@@ -230,8 +230,9 @@ def makeRohCumsumPlot( rohfile, sampleannot, outprefix="results/rohcumplot" ) :
         sizedist["Region"] = region
         allsizedist.append(sizedist)
 
-    allsizedist = concat( allsizedist ).reset_index(drop=True)
-    #print allsizedist[allsizedist.Region == "Middle East"].tail()
+    allsizedist = concat( allsizedist ).reset_index(drop=True).sort("CumProp")
+    print allsizedist[allsizedist.Region == "Oceania"]
+    sys.exit(1)
     r_dataframe = com.convert_to_r_dataframe(allsizedist)
 
     p = ggplot2.ggplot(r_dataframe) + \
@@ -248,6 +249,7 @@ def makeRohCumsumPlot( rohfile, sampleannot, outprefix="results/rohcumplot" ) :
     grdevices.png("%s_rohcumul.png"%outprefix)
     p.plot()
     grdevices.dev_off()
+    sys.exit(1)
 # END makeRohCumsumPlot
 
 def plotDelVars( rohvars ) :

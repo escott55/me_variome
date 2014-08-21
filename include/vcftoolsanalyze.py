@@ -61,7 +61,7 @@ def parseAnnotation(targetpats, annotationfile="./resources/annotation/patientan
 
 def subsectionVCFbyPop( vcffile, sampleannot, outprefix, popsprefix ) :
     allpopfiles = {}
-    for group, data in sampleannot.groupby("Continent") :
+    for group, data in sampleannot.groupby("Continent2") :
         pop = group.replace(" ","_")
         popfile = "%s_%s.txt" %(popsprefix, pop )
         data[["Individual.ID"]].to_csv(popfile,sep="\t",index=False,header=False)
@@ -173,7 +173,7 @@ def vcftools_singletons( vcffile, outprefix ) :
     print "Runout:",runout
 # END vcftools_singletons
 
-def plotSingletons( singletonfile, sampleannot, outprefix="test", factor="ethnicity" ) :
+def plotSingletons( singletonfile, sampleannot, outprefix="test", factor="GeographicRegions" ) :
     print "plotSingletons",singletonfile
     singletons = read_csv(singletonfile, sep="\t")
     singletons.columns =  ["CHROM","POS","Vtype","ALLELE","INDV"]
@@ -185,14 +185,14 @@ def plotSingletons( singletonfile, sampleannot, outprefix="test", factor="ethnic
 
     #print singletons.head(10)
     singletons_merge = merge(singleton_counts,
-                             sampleannot[["Individual.ID","Continent","Source","ethnicity"]], 
+                             sampleannot[["Individual.ID",factor,"Source","Continent2"]], 
                              left_on="INDV", right_on="Individual.ID", how="inner")
     #singletons_merge = singletons_merge[singletons_merge[factor].notnull()]
     singletons_merge["count"] = singletons_merge["count"].map(int)
     r_dataframe = com.convert_to_r_dataframe(singletons_merge)
 
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x = "factor("+factor+")",y="count",fill="factor(Continent)" ) +
+                ggplot2.aes_string(x = "factor("+factor+")",y="count",fill="factor(Continent2)" ) +
                 ggplot2.geom_boxplot() +
                 ggplot2.ggtitle("Singletons by "+factor.capitalize()) +
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)})  +
@@ -202,7 +202,7 @@ def plotSingletons( singletonfile, sampleannot, outprefix="test", factor="ethnic
                 ggplot2.facet_grid( robjects.Formula('Vtype ~ .'), scale="free") )
                 #ggplot2.geom_boxplot(ggplot2.aes_string(fill="Continent")) \
                  #, notch=True ) + \
-    figname = "%s_singletons.png" % (outprefix)
+    figname = "%s_%s_singletons.png" % (outprefix,factor)
     print "Writing file:",figname
     grdevices.png(figname)
     p.plot()
@@ -500,7 +500,7 @@ def plotHardy( filedf, prefix ) :
 # run_vcftools_analyze
 ################################################################################
 def run_vcftools_analyze( vcffile, keepfile=None, outdir=None, force=False ) :
-    #write2log( " - Running:"+whoami(), True )
+    print " - Running: run_vcftools_analyze"
 
     targetdir, filename, suffix = getBasename(vcffile)
     if outdir is None : outdir = targetdir
@@ -520,11 +520,13 @@ def run_vcftools_analyze( vcffile, keepfile=None, outdir=None, force=False ) :
         #print "New vcffile:", vcffile
         
     targetpats = patientInfo.getPats( vcffile )
-    sampleannot = parseAnnotation(targetpats)
+    #sampleannot = parseAnnotation(targetpats)
+    sampleannot = sampleAnnotation( targetpats )
+
     outfiles = []
 
     singlefile = vcftools_singletons( vcffile, outprefix )
-    plotSingletons( singlefile, sampleannot, outprefix, factor="Continent")
+    plotSingletons( singlefile, sampleannot, outprefix, factor="GeographicRegions2")
 
     popvcfs = subsectionVCFbyPop( vcffile, sampleannot, outprefix, popsprefix )
     for pop in popvcfs :
@@ -538,7 +540,7 @@ def run_vcftools_analyze( vcffile, keepfile=None, outdir=None, force=False ) :
         siteFreqSpectrum( vfreqfile, dbsnpinfo, outprefix=outprefix )
         plotDBSnpBar( vfreqfile, dbsnpinfo, header=pop, outprefix=outprefix )
         singlefile= vcftools_singletons( popvcfs[pop], outprefix )
-        plotSingletons( singlefile, sampleannot, outprefix )
+        #plotSingletons( singlefile, sampleannot, outprefix )
         hardyfile= vcftools_hardy( popvcfs[pop], outprefix, force=force )
         outfiles.append([pop,popvcfs[pop],vcountfile,vfreqfile,singlefile,hardyfile])
 
@@ -699,7 +701,9 @@ if __name__ == "__main__" :
     #elif dataset == "onekg" :
         #vcffile = path+"/onekg/onekg.clean.vcf.gz"
     elif dataset == "daily" :
-        vcffile = path+"/daily/daily.clean.vcf.gz"
+        vcffile = path+"/daily/main/daily.clean.vcf.gz"
+    elif dataset == "onekg" :
+        vcffile = path+"/onekg/main/onekg.clean.vcf.gz"
     #elif dataset == "eichler" :
         #vcffile = path+"/eichler/eichler.clean.vcf.gz"
     #elif dataset == "turks" :
@@ -718,6 +722,8 @@ if __name__ == "__main__" :
         vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"
     elif dataset == "merge1kg" :
         vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
+    elif dataset == "mevariome" :
+        vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
 
 
     if optlist.has_key("-t") :
@@ -741,9 +747,9 @@ if __name__ == "__main__" :
         print "Unrelated:",len(unrelated)
     else :
         print "Using dataset:", dataset
-        keepfile = "%s/%s/tokeep.txt" % (path, dataset)
-        assert os.path.exists( keepfile )
-        run_vcftools_analyze( vcffile, keepfile )
+        #keepfile = "%s/%s/tokeep.txt" % (path, dataset)
+        #assert os.path.exists( keepfile )
+        run_vcftools_analyze( vcffile, force=True )
 
 # END Main
 

@@ -668,9 +668,10 @@ if __name__ == "__main__":
 
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
     #vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
-    vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
+    #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
+    #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
-    #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     print "Using Vcffile:",vcffile
 
     #maxK = 4

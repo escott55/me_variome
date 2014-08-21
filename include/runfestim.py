@@ -400,7 +400,7 @@ def plotIBC( ibcfile, factor="continent" ):
     print filtdata.head(10)
 
     r_dataframe = com.convert_to_r_dataframe(filtdata)
-    print summary(r_dataframe)
+    #print summary(r_dataframe)
     #print r_dataframe.rx2("F")
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x = "factor("+factor+")",y="F" ) +

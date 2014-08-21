@@ -8,6 +8,7 @@ from scipy.stats import ttest_ind
 
 from localglobals import *
 import housekeeping as hk
+import king
 #
 forceFlag = False
 
@@ -431,6 +432,7 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
     print "Effvcf:",effvcf
 
     clinvar = parseClinVar(vfilter=5)
+    print "Finished parsing clinvar"
 
     filepath, basename, suffix = hk.getBasename( callvcf )
     isoformfile = "%s/%s_genes.tsv" % (filepath, basename )
@@ -443,10 +445,14 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
     sampregions = [regions[x] if x in sorted(regions) else "None" for x in filepats]
 
     vcfcols = ["CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","Meta"]
+    print "Attempting to read file",effvcf
     annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
                           names=vcfcols,header=None,low_memory=False)
                   .dropna(how='all')
                   .reset_index(drop=True)) #skiprows=range(4),
+
+    print "Finished annotation"
+    print annotation.head()
 
     annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
                            for x in annotation["CHROM"].tolist()]
@@ -657,6 +663,9 @@ def makeSmallVCF( annotvcf, figuredir="./results/figures/classes", force=False )
         for geno in genotypes :
             totalgeno += geno.split("/")
 
+        if totalgeno.count("0") + totalgeno.count("1") == 0 : 
+            print "Skipping 0 count"; continue
+
         AF = float(totalgeno.count("1")) / (totalgeno.count("0") + totalgeno.count("1"))
         if AF == 0.0 or AF == 1.0 : continue #print "Filter by AF"; continue
         afdist.append([chrom,pos,AF,missingness])
@@ -823,8 +832,14 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
         vclass = varfilt.ix[vid]["vclass"]
         islof = varfilt.ix[vid]["LOF"] is not np.nan
         isnmd = varfilt.ix[vid]["NMD"] is not np.nan
+        if type(vclass) is Series : 
+            print "Error: vclass isnt series!",vclass
+            continue
+
         if vclass not in vclasses: 
             print "Error: unrecognized vclass",vclass
+            continue
+
         for i in range(9,len(row)) : 
             genotype = sum([int(x) for x in row[i][:3].split("/") 
                             if hk.is_int(x)])
@@ -1349,25 +1364,91 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
 # END plotSampleCounts2
 
 ################################################################################
+def basicClean( vcffile, rerun=False ):
+    print "Running basicClean"
+    patientdata = sampleAnnotation()
+    filepath, basename, suffix = hk.getBasename(vcffile)
+
+    cleanbase = "%s/%s"%(filepath,basename)
+    recodevcf = cleanbase+".recode.vcf"
+    tvcf = cleanbase+".sfilt.vcf"
+    tvcfgz = cleanbase+".sfilt.vcf.gz"
+    if os.path.exists( tvcfgz ) and not rerun :
+        return tvcfgz
+
+    # Annotation Outliers
+    vcfpats = patientInfo.getPats( vcffile )
+    vcfpats = DataFrame({'Individual.ID':vcfpats})
+    vcfpats = addSampleAnnotation( vcfpats, mergecol="Individual.ID" )
+    sampleannot = vcfpats[(vcfpats.Continent2.notnull()
+                              & (vcfpats.Continent2 != "Unknown"))]
+
+    #keepfile = os.path.join(filepath, basename+".annotkeeppats")
+    #sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
+    annotpats = sampleannot["Individual.ID"].tolist()
+    
+    toremove="./toremove.txt"
+    autoremove = []
+    if os.path.exists(toremove):
+        autoremove = ([x.strip() for x in open(toremove).readlines()
+                       if len(x.strip()) > 0])
+    
+    qcoutliers = king.popOutliers( vcffile )
+
+    filepats = patientInfo.currentFilePats( vcffile )
+    keepfile = os.path.join(filepath,basename+".keep")
+    OUT = open(keepfile,"wb")
+    for samp in filepats :
+        if samp in autoremove : print "autoremove",samp; continue
+        if samp in qcoutliers : print "qcoutlier",samp; continue # skip outliers
+        if samp not in annotpats : print "no annotation",samp; continue
+        OUT.write(samp+"\n")
+    OUT.close()
+
+    command = ["vcftools","--gzvcf", vcffile,
+               "--remove-filtered-all",
+               "--keep",keepfile,
+               "--min-alleles","2","--max-alleles","2",
+               "--recode","--out",cleanbase]
+
+    #print " ".join(command)
+    out = subprocess.check_output( command )
+
+    assert os.path.exists(recodevcf)
+
+    #bedfile = pop.run_plink_convert(tped, force=rerun)
+    #bedfile = pop.run_plink_filter(tped, force=rerun)
+    subprocess.call(['mv', recodevcf, tvcf])
+    subprocess.call(["bgzip",tvcf])
+    subprocess.call(["tabix","-p","vcf",tvcfgz])
+
+    return tvcfgz
+# END seriousClean
+
+################################################################################
 # runClassifyWorkflow
 ################################################################################
 def runClassifyWorkflow( vcffile, sampleannot, regionlist, figuredir ):
     print "Running runClassifyWorkflow"
-    filepats = patientInfo.currentFilePats( vcffile )
-    smallvcf = makeSmallVCF(vcffile,figuredir=figuredir, force=False )
+    targetvcf = hk.copyToSubDir( vcffile, "classify" )
+    # filter variants to remove poor quality
+    cleanvcf = basicClean( targetvcf, rerun=False )
+
+    filepats = patientInfo.currentFilePats( cleanvcf )
+    smallvcf = makeSmallVCF(cleanvcf,figuredir=figuredir, force=False )
     allvcffiles = annotateVCF( smallvcf, force=False )
     print allvcffiles
 
-    geneannotfile = classifyVars( allvcffiles["scores"], vcffile, 
+    geneannotfile = classifyVars( allvcffiles["scores"], cleanvcf, 
                                  sampleannot, regionlist, filepats,
                                  "./results/classes", force=True )
-    samplecounts = individualVarStats( vcffile, geneannotfile, 
+    samplecounts = individualVarStats( cleanvcf, geneannotfile, 
                               sampleannot, regionlist, filepats, force=True)
     #plotSampleCounts( samplecounts, outdir=figuredir )
     plotSampleCounts2( samplecounts, outdir=figuredir )
-    if vcffile.find("meceu") >= 0 : 
+    if cleanvcf.find("meceu") >= 0 : 
         regionlist = ["Europe","Middle East"]
-    elif vcffile.find( "1000G" ) >= 0 :
+    elif cleanvcf.find( "1000G" ) >= 0 :
         regionlist = ["Europe", "Middle East", "Africa"]
                    
     plotHomozygosity( geneannotfile, regionlist, outdir=figuredir )
@@ -1401,12 +1482,14 @@ if __name__ == "__main__" :
         vcffile = path+"/onekg/onekg.clean.vcf.gz"
     elif dataset == "test2" :
         vcffile = path+"/test2/main/test2.clean.vcf.gz"
+        #vcffile = path+"/test2/test2.clean.vcf.gz"
     elif dataset == "daily" :
         vcffile = path+"/daily/daily.clean.vcf.gz"
     elif dataset == "merge1kg" :
         vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
     elif dataset == "mevariome" :
-        vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
+        vcffile = path+"/mevariome/variome.vcf.gz"
+        #vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
     #elif dataset == "variome1" :
         #vcffile = path+"/variome1/variome.clean.vcf.gz"
         #vcffile = path+"/variome1/variome.vcf.gz"
@@ -1414,7 +1497,8 @@ if __name__ == "__main__" :
         #vcffile = path+"/variome/variome.clean.vcf.gz"
         #vcffile = path+"/variome1/variome.vcf.gz"
     elif dataset == "mergedaly" :
-        vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"
+        #vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"
+        vcffile = path+"/mergedaly/meceu.vcf.gz"
     elif dataset == "casanova" :
         vcffile = path+"/casanova/casanova.snp.recal.clean.vcf.gz"
     #elif dataset == "CEU" :

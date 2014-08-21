@@ -26,7 +26,7 @@ prefix <- ifelse(length(args)>=1,args[1],"default")
 
 prefix <- "merged.chimp.clean_plink"
 #prefix <- "merged.chimp.regions.filt.samp.samp_plink"
-ibcdatafile <- paste("results/",prefix,"_continent_ibcrates.txt",sep="")
+ibcdatafile <- paste("results/ibc/",prefix,"_continent_ibcrates.txt",sep="")
 #countryfile <- paste("results/",prefix,"_country_ibcrates.txt",sep="")
 
 print(paste("Prefix:",prefix))
@@ -54,7 +54,7 @@ scounts <- scounts[scounts$Var1 %in% tokeep & scounts$Freq > 4,]
 #consang_filt <- consang[consang$Continent %in% c("Middle East","South Asia"),]
 consang_filt <- consang[consang$Origin %in% scounts$Var1,]
 
-outimage <- paste("results/figures/",prefix,"_country_ibc_violin.png",sep="")
+outimage <- paste("results/figures/ibc/",prefix,"_country_ibc_violin.png",sep="")
 print(outimage)
 png(outimage)
 m1 <- ggplot(consang_filt, aes(x=Origin, y=F))
@@ -73,7 +73,7 @@ ethnicity.mean <- aggregate(consang$F, by=list(consang$ethnicity), FUN=mean, na.
 consang$ethnicity <- factor(consang$ethnicity, levels=as.character(ethnicity.mean$Group.1[order(ethnicity.mean$x)]))
 
 #consang_filt <- country[country$ethnicity %in% c("Adygei","Bedouin","Druze","Mozabite","Palestinian"),]
-outimage <- paste("results/figures/",prefix,"_ethnicity_ibc_violin.png",sep="")
+outimage <- paste("results/figures/ibc/",prefix,"_ethnicity_ibc_violin.png",sep="")
 print(outimage)
 png(outimage)
 m2 <- ggplot(consang_filt, aes(x=ethnicity, y=F))
@@ -97,7 +97,7 @@ print(continent.mean)
 #consang$Continent <- factor(consang$Continent, levels=as.character(continent.mean[order(continent.mean$F),]$Continent))
 consang$Continent <- factor(consang$Continent, levels=as.character(continent.mean$Group.1[order(continent.mean$x)]))
 
-outimage <- paste("results/figures/",prefix,"_continent_ibc_violin.png",sep="")
+outimage <- paste("results/figures/ibc/",prefix,"_continent_ibc_violin.png",sep="")
 print(outimage)
 png(outimage)
 m3 <- ggplot(consang, aes(x=Continent, y=F))
@@ -111,7 +111,7 @@ print(m3)
 dev.off()
 #m3 <- m3 + geom_boxplot( )
 
-finalfig <- paste("results/figures/",prefix,"_ibc_final.png",sep="")
+finalfig <- paste("results/figures/ibc/",prefix,"_ibc_final.png",sep="")
 print( paste("Writing file:",finalfig) )
 png(finalfig, width=7, height=4, units="in", res=400)
 grid.arrange(m3,m2, widths=c(1/2,1/2), ncol=2)

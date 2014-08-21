@@ -176,7 +176,8 @@ def seriousClean( vcffile, rerun=False ):
     pop.modify_tped( tped, patientdata, force=rerun )
                              #calcdistances=True, shorten=True, 
 
-    bedfile = pop.run_plink_convert(tped, force=rerun)
+    #bedfile = pop.run_plink_convert(tped, force=rerun)
+    bedfile = pop.run_plink_filter(tped, force=rerun)
     return bedfile
 # END seriousClean
 
@@ -338,7 +339,7 @@ if __name__ == "__main__":
     #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
 
     
-    unrelfile, famrelfile, interrelfile = king_workflow( vcffile, force=False )
+    unrelfile, famrelfile, interrelfile = king_workflow( vcffile, force=True )
 
     #unrelated = [x.strip() for x in open(unrelfile).readlines() if len(x) > 0]
     unrelated = read_csv( unrelfile, sep="\t", header=None, names=["FID","Individual.ID"] )

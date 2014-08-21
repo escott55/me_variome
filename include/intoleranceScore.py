@@ -261,21 +261,59 @@ def makeGeneCounts1( prefix, regions, vclasses=[1], minmaf=0.0 ) :
     for row in csvread :
         s = Series(data=row,index=header)
         if s["vclass"] not in vclasses : continue
-        #if s["AF"] < minmaf : continue
+        if s["AF"] < minmaf : continue
         for region in foundregions : 
-            ref,het,hom = [int(x) for x in s[region].split(":")]
+            #ref,het,hom = [int(x) for x in s[region].split(":")]
             regionaf = (2*hom+het) / (2.*(ref+het+hom))
-            if regionaf < minmaf : continue
+            s[region] = regionaf
             #s[region] = sum([int(x) for x in s[region].split(":")[1:]])
-            regseries = Series({"chrom":s["chrom"],"pos":s["pos"],"Gene":s["Gene"],
-                        "AF":regionaf,"region":region,"samps":(hom+het)})
-            allvars.append(regseries)
+            #if regionaf < minmaf : continue
+            #regseries = Series({"chrom":s["chrom"],"pos":s["pos"],"Gene":s["Gene"],
+                        #"AF":regionaf,"region":region,"samps":(hom+het)})
+            #allvars.append(regseries)
+        allvars.append(s[["chrom","pos","Gene","vclass"]+foundregions])
         #print s[["chrom","pos","Gene"]+foundregions]
 
     allvars = DataFrame(allvars)
     #print allvars.head(10)
     return allvars
 # END makeGeneCounts1
+
+################################################################################
+# makeGeneCounts2
+################################################################################
+def makeGeneCounts2( prefix, region, vclasses=[1], minmaf=0.0 ) :
+    print "Running makeGeneCounts2 - region:",region
+    varfile = prefix+"_genes.tsv"
+    csvread = csv.reader(open(varfile),delimiter="\t")
+    header = csvread.next()
+    foundregions = [x for x in regions if x in header]
+    allvars = []
+    #limit = 100
+    for row in csvread :
+        s = Series(data=row,index=header)
+        if s["vclass"] not in vclasses : continue
+        #if s["AF"] < minmaf : continue
+        #for region in foundregions : 
+        ref,het,hom = [int(x) for x in s[region].split(":")]
+        #print s[region]
+        #print hom, het, ref
+        #print (2*hom+het),(2.*(ref+het+hom))
+        regionaf = (2*hom+het) / (2.*(ref+het+hom))
+        #print regionaf
+        if regionaf == 0. or regionaf < minmaf : continue
+        #s[region] = sum([int(x) for x in s[region].split(":")[1:]])
+        regseries = Series({"chrom":s["chrom"],"pos":s["pos"],"Gene":s["Gene"],
+                    "AF":regionaf,"region":region,"nsamp":(hom+het)})
+        allvars.append(regseries)
+        #limit -= 1
+        #if limit <= 0 : sys.exit(1)
+        #print s[["chrom","pos","Gene"]+foundregions]
+
+    allvars = DataFrame(allvars)
+    #print allvars.head(10)
+    return allvars
+# END makeGeneCounts2
 
 ######################################################################
 # Main
@@ -301,10 +339,28 @@ if __name__ == "__main__" :
     
     #prefix = "rawdata/daily/daily.clean"
     #prefix = "rawdata/merged/main/merged.clean"
-    prefix = "rawdata/mevariome/main/variome.clean"
-    bigX = makeGeneCounts1( prefix, regions, vclasses=["5","4","3","2","1"] )
+    #prefix = "rawdata/mevariome/main/variome.clean"
+    #prefix = "rawdata/mergedaly/main/meceu.clean"
+    prefix = "rawdata/daily/main/daily.clean"
+    tregion = "Europe"
+    bigX = makeGeneCounts2( prefix, tregion, vclasses=["4","3","2","1"] )
+    bigY = makeGeneCounts2( prefix, tregion, vclasses=["4","3","2"], minmaf=.01 )
 
-    bigY = makeGeneCounts1( prefix, regions, vclasses=["5","4","3"], maf=.1 )
+    print bigX.head(10)
+    print "X",bigX.shape,"Y",bigY.shape
+
+    #print "#"*70,"\n", "Running :",cont
+    subX = DataFrame({'Xcount' : bigX.groupby( "Gene" ).size()}).reset_index()
+    #if len(subX) == 0 : print "Region:",cont,"not found"; continue
+    subY = DataFrame({'Ycount' : bigY.groupby( "Gene" ).size()}).reset_index()
+    genecounts = merge(subX,subY,on="Gene")
+    print genecounts.head(10)
+    crvis = calculateRVIS( genecounts, prefix=tregion ) 
+    print crvis.head(3)
+    sys.exit(1)
+
+    #bigX = makeGeneCounts1( prefix, regions, vclasses=["5","4","3","2","1"] )
+    #bigY = makeGeneCounts1( prefix, regions, vclasses=["5","4","3"], maf=.1 )
     #bigX = makeGeneCounts( prefix, regions, regionlookup, vclasses=["5","4","3","2","1"] )
     #bigY = makeGeneCounts( prefix, regions, regionlookup, vclasses=["5","4","3","2"], maf=.05 )
 
@@ -368,6 +424,7 @@ if __name__ == "__main__" :
 
     crvis = calculateRVIS( cbigx, cbigy )
     sys.exit(1)
+# END 
     #print rstats.coef(model_x)
 
     # eruption.lm = lm(eruptions ~ waiting, data=faithful)

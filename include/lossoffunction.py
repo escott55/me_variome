@@ -371,80 +371,7 @@ def plotPSIClasses( allpsi, targetdir, prefix ):
     grdevices.dev_off()
 # END plotPSIClasses
 
-################################################################################
-# Main
-################################################################################
-if __name__ == "__main__" :
-
-    os.chdir("..")
-    #sampleannot = sampleAnnotation()
-    # Make X
-    #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
-    varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
-    targetvarfile = hk.copyToSubDir( varfile, "lof" )
-
-    targetdir, basename, suffix = hk.getBasename( targetvarfile )
-    prefix = basename[:basename.find("_genes")]
-
-    psiannotatedfile = os.path.join(targetdir, prefix+"_psi.tsv")
-    print "Writing file:", psiannotatedfile
-    vardf = read_csv(targetvarfile,sep="\t")
-    vardf = psiIntersect( vardf, psiannotatedfile )
-    print vardf.head(10)
-    plotPSIClasses( vardf, targetdir, prefix )
-    sys.exit(1)
-
-    lofpsiannotatedfile = os.path.join(targetdir, prefix+"_lof_psi.tsv")
-    randpsiannotatedfile = os.path.join(targetdir, prefix+"_rand_psi.tsv")
-    print "LoF file:",lofpsiannotatedfile
-    print "Rand file:",randpsiannotatedfile
-    force = True
-
-    # make Lof Variant Set
-    if not os.path.exists( lofpsiannotatedfile ) :
-        lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
-        print lofvariants.shape
-        lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
-        lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
-        psiIntersect( lofvariants, lofpsiannotatedfile )
-    else :
-        lofvariants = read_csv( lofpsiannotatedfile, sep="\t" )
-
-    # make Rand Variant Set
-    if not os.path.exists( randpsiannotatedfile ) or force:
-        randrows = random.sample(vardf.index, len(lofvariants))
-        randvariants = vardf.ix[randrows]
-        randvariants["me_af"] = calcRegionAF(randvariants,"Middle East")
-        randvariants["ceu_af"] = calcRegionAF(randvariants,"Europe")
-        psiIntersect( randvariants, randpsiannotatedfile, force )
-    else :
-        randvariants = read_csv( randpsiannotatedfile, sep="\t" )
-
-    randvariants["Vclass"] = "Random"
-    lofvariants["Vclass"] = "LoF"
-
-    lofgenes = DataFrame({'Gene':lofvariants.Gene.unique()})
-    randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
-
-
-    # Intersect with Synthetic Lethal list
-    sldata = read_csv("resources/sl_genelist.txt", sep="\t",
-                      header=None, names=["Gene","interactions"])
-
-    # Intersect with omim list
-    omimgenes = read_csv("resources/omimgenes.txt", sep="\t")
-
-    # Intersect with Kegg Pathway
-    kegggenes = read_csv("resources/keggPathway.txt", sep="\t")
-
-    # Intersect with RVIS
-    #rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
-  
-    # Intersect with PSI
-    #psiAnalysis( lofvariants, randvariants, targetdir, prefix )
-    tcols = ["Gene","PSI","Vclass"]
-    allpsi = concat( [lofvariants[tcols], randvariants[tcols]] ).reset_index()
-    print allpsi.head()
+def plotPSIByClass(allpsi, targetdir, prefix) :
     allpsi = allpsi[allpsi.PSI != "-"]
     allpsi.PSI = allpsi.PSI.astype("float")
     r_dataframe = com.convert_to_r_dataframe(allpsi)
@@ -462,8 +389,137 @@ if __name__ == "__main__" :
     grdevices.png(figname)
     p.plot()
     grdevices.dev_off()
+# END plotPSIByClass
 
 
+################################################################################
+# Main
+################################################################################
+if __name__ == "__main__" :
+
+    os.chdir("..")
+    #sampleannot = sampleAnnotation()
+    # Make X
+    #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
+    #varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
+    varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
+    varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/me1000G.clean_genes.tsv"
+    targetvarfile = hk.copyToSubDir( varfile, "lof" )
+
+    targetdir, basename, suffix = hk.getBasename( targetvarfile )
+    prefix = basename[:basename.find("_genes")]
+
+    psiannotatedfile = os.path.join(targetdir, prefix+"_psi.tsv")
+    print "Writing file:", psiannotatedfile
+    vardf = read_csv(targetvarfile,sep="\t")
+    vardf = psiIntersect( vardf, psiannotatedfile )
+    print vardf.head(10)
+    plotPSIClasses( vardf, targetdir, prefix )
+
+
+    lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
+    lofvariants["ncarriers"] = [sum([int(y) for y in x.split(":")[1:]]) 
+                                for x in lofvariants["Middle East"]]
+
+    lofvariants = lofvariants[lofvariants.ncarriers > 1]
+
+    randrows = random.sample(vardf.index, len(lofvariants))
+    randvariants = vardf.ix[randrows]
+
+    lofgenes = DataFrame({'Gene':lofvariants.Gene.unique()})
+    randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
+
+    # Intersect with Synthetic Lethal list
+    sldata = read_csv("resources/sl_genelist.txt", sep="\t",
+                      header=None, names=["Gene","interactions"])
+
+    # Intersect with omim list
+    omimgenes = read_csv("resources/omimgenes.txt", sep="\t")
+
+    # Intersect with Kegg Pathway
+    kegggenes = read_csv("resources/keggPathway.txt", sep="\t")
+
+    # Intersect with RVIS
+    #rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
+  
+    mgigenes = read_csv("resources/mgi/mgi_allclasses.txt", sep="\t",
+                        header=None, names=["Gene","GID","Phenotype","MGI"],
+                        dtype={'Gene':str})
+
+    mgigenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
+                          for x in mgigenes["Phenotype"]]
+    mgigenes_sub = (mgigenes.sort("lethal")
+                    .groupby("Gene").first().reset_index())
+
+    lofmgi = merge( lofgenes, mgigenes_sub, on="Gene" )
+    print lofmgi.head()
+
+    print hk.dfTable(lofmgi.lethal)
+    print lofgenes.shape
+
+    flygenes = read_csv( "resources/flybase/gene_summaries.tsv", sep="\t",
+                       header=None,names=["flygene","summary"],skiprows=[0])
+    flygenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
+                          for x in flygenes["summary"]]
+    flygenes = (flygenes.sort("lethal")
+                    .groupby("flygene").first().reset_index())
+    ensembl = (read_csv( "resources/flybase/ensembl2flybase.tsv", sep="\t")
+               .groupby(["Drosophila Ensembl Gene ID","Associated Gene Name"])
+               .size().reset_index())
+
+    flygenes_annot = merge( flygenes, ensembl, left_on="flygene",
+                           right_on="Drosophila Ensembl Gene ID" )
+    print hk.dfTable(flygenes.lethal)
+
+    loffly = merge( lofgenes, flygenes_annot, left_on="Gene",
+                   right_on="Associated Gene Name")
+
+    justfly = loffly.groupby(["flygene","lethal"]).size().reset_index()
+    print hk.dfTable(justfly.lethal)
+
+    tcols = ["Gene","PSI","Vclass"]
+    allpsi = concat( [lofvariants[tcols], randvariants[tcols]] ).reset_index()
+    print allpsi.head()
+    plotPSIByClass(allpsi, targetdir, prefix)
+
+    sys.exit(1)
+# END MAIN
+    #lofpsiannotatedfile = os.path.join(targetdir, prefix+"_lof_psi.tsv")
+    #randpsiannotatedfile = os.path.join(targetdir, prefix+"_rand_psi.tsv")
+    #print "LoF file:",lofpsiannotatedfile
+    #print "Rand file:",randpsiannotatedfile
+    #force = True
+#
+    ## make Lof Variant Set
+    #if not os.path.exists( lofpsiannotatedfile ) :
+        #lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
+        #print lofvariants.shape
+        #lofvariants["me_af"] = calcRegionAF(lofvariants,"Middle East")
+        #lofvariants["ceu_af"] = calcRegionAF(lofvariants,"Europe")
+        #psiIntersect( lofvariants, lofpsiannotatedfile )
+    #else :
+        #lofvariants = read_csv( lofpsiannotatedfile, sep="\t" )
+#
+    ## make Rand Variant Set
+    #if not os.path.exists( randpsiannotatedfile ) or force:
+        #randrows = random.sample(vardf.index, len(lofvariants))
+        #randvariants = vardf.ix[randrows]
+        #randvariants["me_af"] = calcRegionAF(randvariants,"Middle East")
+        #randvariants["ceu_af"] = calcRegionAF(randvariants,"Europe")
+        #psiIntersect( randvariants, randpsiannotatedfile, force )
+    #else :
+        #randvariants = read_csv( randpsiannotatedfile, sep="\t" )
+#
+    #randvariants["Vclass"] = "Random"
+    #lofvariants["Vclass"] = "LoF"
+#
+
+    #mgilethal = read_csv("resources/mgi/mgilethal.txt", sep="\t",
+                        #header=None, names=["Gene","GID","Phenotype","MGI"],
+                        #dtype={'Gene':str})
+
+    # Intersect with PSI
+    #psiAnalysis( lofvariants, randvariants, targetdir, prefix )
 
     sys.exit(1)
     print len(vardf["Middle East"].isnull())

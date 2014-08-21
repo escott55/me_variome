@@ -185,7 +185,7 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     hk.makeDir( targetdir )
     outprefix = "%s/%s" % (targetdir, filename)
 
-    finalkeepfile = outprefix+".finalpats"
+    #finalkeepfile = outprefix+".finalpats"
     #if os.path.exists(finalkeepfile) and not force:
         #print "Finalpats file exists! skipping....", finalkeepfile
         #return finalkeepfile
@@ -257,9 +257,11 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     print "After annot:", len(fp_annot)
     #print fp_annot.head()
     print "Writing filter file", afterfilterfile
-    fp_annot[["filepats","Continent","GeographicRegions2"]].to_csv( 
+    fp_annot[["filepats","Continent","Continent2","GeographicRegions2","Origin",
+              "ethnicity","Country","country"]].to_csv( 
         afterfilterfile, sep="\t", index=False )
 
+    sys.exit(1)
     return finalkeepfile
 # END identifySamplesToKeep
 
@@ -304,7 +306,8 @@ def makeCleanVCF( vcffile, keepfile=None, toforce=False ) :
     roh_analysis.makeRohCumPlot( roh_calls, sampleannot, figprefix )
 
     # Admixture
-    admixture.admixtureAnalysis( bedfile_filt, sampleannot )
+    print "Run admixture on your own!"
+    #admixture.admixtureAnalysis( bedfile_filt, sampleannot )
 
     # ROH exome coverage
     roh_more.exomeCoverage( roh_calls, sampleannot, outprefix=filename )
@@ -380,6 +383,8 @@ if __name__ == "__main__" :
         vcffile = path+"/merge1kg/me1000G.vcf.gz"
     elif dataset == "merge1kgimp" :
         vcffile = path+"/merge1kg/me1000G_imp.vcf.gz"
+    elif dataset == "mergedalyimp" :
+        vcffile = path+"/mergedalyimp/meceu_imp.vcf.gz"
     elif dataset == "casanova" :
         vcffile = path+"/casanova/casanova.snp.recal.chimp.vcf.gz"
     else :

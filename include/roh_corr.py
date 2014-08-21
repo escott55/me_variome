@@ -138,11 +138,12 @@ def exomeCov( bedpath, targetdir, sampleannot, force=False, targetsamples=None,
 def collapseBedFiles( bedpath, targetdir, targetsamples=None, outprefix="h3m2", 
                      force=False ): 
     print "Running collapseBedFiles"
-    targetfile = os.path.join( targetdir, outprefix+"_all.bed" )
+    targetbedfile = os.path.join( targetdir, outprefix+"_all.bed" )
+    targetfile = os.path.join( targetdir, outprefix+"_all.hom" )
 
     if os.path.exists(targetfile) and not force:
         print "Warning: final file already exists:",targetfile,". skipping..."
-        return targetfile
+        return targetbedfile, targetfile
 
     print "Making file:",targetfile
     rawrohbedfiles = glob.glob( os.path.join( bedpath, "*.bed" ) )
@@ -157,13 +158,17 @@ def collapseBedFiles( bedpath, targetdir, targetsamples=None, outprefix="h3m2",
                 continue
         print "Sample passed!",sample
         regions = read_csv( bedfile, sep="\t", header=None, 
-                           names=["chrom","start","end","cnt","vars"])
-        regions["sample"] = sample
-        alldata.append( regions[["chrom","start","end","sample"]] )
+                           names=["chrom","POS1","POS2","cnt","NSNP"])
+        regions["IID"] = sample
+        regions["KB"] = [(end-start)/1000. 
+                         for start,end in regions[["POS1","POS2"]].values]
+        regions["DENSITY"] = regions["NSNP"] / regions["KB"]
+        alldata.append( regions )
 
     alldata = concat( alldata )
-    alldata.to_csv(targetfile, header=None, sep="\t" )
-    return targetfile
+    alldata[["chrom","POS1","POS2","IID"]].to_csv(targetbedfile, header=None, sep="\t" )
+    alldata.to_csv(targetfile, sep="\t" )
+    return targetbedfile,targetfile
 # END collapseBedFiles
 
 ################################################################################
@@ -178,7 +183,7 @@ if __name__ == "__main__" :
     basedir = "/home/escott/workspace/variome/results/roh_h3m2/"
     bedpath = os.path.join(basedir,"raw/")
     exomepath = os.path.join(basedir,"exome/")
-    figuredir = "results/figures/roh/h2m2/"
+    figuredir = "results/figures/roh/h3m2/"
     
     outprefix = "h3m2"
     prefix = "test"
@@ -194,7 +199,7 @@ if __name__ == "__main__" :
     #percentAnalysis( allbases, exometotals, outprefix )
     percentAnalysisRegions( allbases, exometotals, sampleannot, outprefix )
 
-    allrohfile = collapseBedFiles(bedpath, basedir, targetsamples=targetsamples, 
+    rohbedfile, allrohfile = collapseBedFiles(bedpath, basedir, targetsamples=targetsamples, 
                                   outprefix=outprefix, force=False)
     makeRohCumsumPlot( allrohfile, sampleannot, os.path.join(figuredir,prefix) )
 

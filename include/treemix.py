@@ -86,11 +86,10 @@ def plotTree( prefix, pop_order ) :
         'dev.off()\n')
         #'pop_order <- c("'+'","'.join(pop_order)+'")\n'
 
-    print "R command"
-    print rcmd
+    #print "R command", rcmd
     out = robjects.r( rcmd )
     "Make figures out:"
-    print out
+    #print out
     assert os.path.exists(treefigfile)
 # END plotTree
 
@@ -100,7 +99,7 @@ def makeClusterFile( famfile, pfactor="Continent" ) :
 
     famdata = read_csv( famfile, header=None, delim_whitespace=True,
                        names=["FID","IID","PID","MID","gender","aff"] )
-    print famdata.head(10)
+    #print famdata.head(10)
     famdata["IID"] = [x[:x.find(".")] if x.find(".") > 0 else x
                       for x in famdata["IID"].tolist()]
     tids = famdata["IID"].tolist()
@@ -114,7 +113,7 @@ def makeClusterFile( famfile, pfactor="Continent" ) :
     assert len(alldata) == len(famdata)
 
     alldata["cluster"] = factorize( alldata[pfactor] )[0]
-    print alldata[["FID","IID","cluster",pfactor]].head()
+    #print alldata[["FID","IID","cluster",pfactor]].head()
     clusterfile = filebase+".clust"
 
     print "Writing file:", clusterfile
@@ -187,12 +186,14 @@ def runTreeMix( treemixfile, migrationevents=0, root=None, annotcol=None, force=
     return targetbase
 # END runTreeMix
 
+################################################################################
 def seriousClean( vcffile, keepfile=None, rerun=False ):
     print "Running seriousClean"
     filepath, basename, suffix = hk.getBasename(vcffile)
 
     cleanped = "%s/%s"%(filepath,basename)
-    bedfile = cleanped+".bed"
+    #bedfile = cleanped+".bed"
+    bedfile = cleanped+".filt.bed"
     if os.path.exists(bedfile) and not rerun : 
         return bedfile
 
@@ -213,7 +214,8 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
     if not os.path.exists( tped ) or rerun:
         out = subprocess.check_output( command )
 
-    bedfile = pop.run_plink_convert(tped, force=rerun)
+    #bedfile = pop.run_plink_convert(tped, force=rerun)
+    bedfile = pop.run_plink_filter(tped, force=rerun)
     return bedfile
 # END seriousClean
     #cptargetfile = os.path.join(targetdir,basename+suffix+".gz")
@@ -228,6 +230,7 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
     #frqfile = plink_makefrqfile( modped, force=rerun )
     #newfrq, excludebase = pop.excludeSnps( modped, force=rerun )
 
+################################################################################
 def getLevels( annotcol, targetvcf ):
     print "Running getLevels"
     if annotcol == "GeographicRegions2" :
@@ -257,7 +260,7 @@ def getLevels( annotcol, targetvcf ):
     return finallevels, sampleannot#, keepfiles
 # END getLevels
 
-######################################################################
+################################################################################
 if __name__ == "__main__":
 
     #optlist, args = getopt.getopt( sys.argv[1:], "bk")
@@ -268,13 +271,14 @@ if __name__ == "__main__":
     #bedfile = "./rawdata/mevariome/main/pca/variome.clean.recode12.mod.exclude.bed"
     #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
 
     #filepath, filename = os.path.split(vcffile)
     #targetdir = os.path.join(filepath,"tree")
     #hk.makeDir(targetdir)
 
-    annotcol = "GeographicRegions"
+    annotcol = "GeographicRegions2"
     targetvcf = hk.copyToSubDir( vcffile, "tree/"+annotcol )
     filepath, filename, suffix = hk.getBasename(targetvcf)
 
@@ -294,12 +298,12 @@ if __name__ == "__main__":
     
     root = None
     if "Africa" in regions : root = "Africa"
-    if "YRI" in regions : root = "YRI"
+    if "YRI" in regions : root = "YRI,LWK"
     else : None
 
     #for numevents in [0] :
     for numevents in [0,1,2,3,4] :
-        treemixoutbase = runTreeMix( treemixfile, numevents, root, annotcol )
+        treemixoutbase = runTreeMix( treemixfile, numevents, root, annotcol, force=True )
         treemixsuffixes = ["cov","covse","edges","modelcov","treeout","verticies"]
         for suffix in treemixsuffixes :
             cfile = "%s.%s.gz" %(treemixoutbase,suffix)
