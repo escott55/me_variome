@@ -15,48 +15,51 @@ from popgencommands import *
 from localglobals import *
 import patientInfo
 
-######################################################################
+################################################################################
 # vcftools_splitbypop
-######################################################################
+################################################################################
 def vcftools_splitbypop( vcffile, patientannot, force=forceFlag ):
     write2log(" - Running "+whoami(), True)
 
     filepath, basename, suffix = getBasename(vcffile)
 
+    targetdir = os.path.join(filepath,"pops")
+    makeDir(targetdir)
     patientannot.index = patientannot["Individual.ID"].tolist()
     samples = patientInfo.getPats( vcffile ) 
     assert len(samples) > 0
-    #print patientannot.head(3)
     samples = [ x for x in samples if x in patientannot["Individual.ID"].tolist() ]
-    annot = patientannot.loc[samples,["Individual.ID","continent"]]
+    annot = patientannot.loc[samples,["Individual.ID","Continent2"]]
     #print annot.head(3)
 
     patfiles = {}
-    for region, data in annot.groupby("continent") : 
+    for region, data in annot.groupby("Continent2") : 
         if len(data) < 10 : continue
-        patfiles[region.replace(" ","_")] = "%s/%s_pats.txt" % (filepath, region.replace(" ","_"))
-        data["Individual.ID"].to_csv("%s/%s_pats.txt" % (filepath, region.replace(" ","_")), index=False, header=False)
+        patfiles[region.replace(" ","_")] = "%s/%s_pats.txt" % (targetdir, region.replace(" ","_"))
+        patsfile = os.path.join(targetdir,region.replace(" ","_")+"_pats.txt")
+        data["Individual.ID"].to_csv( patsfile, index=False, header=False)
 
     newfiles = {}
     for pop, popfile in patfiles.iteritems() :
-        plinkfile = "%s/%s.%s" % (filepath, basename, pop.replace(" ","_"))
+        plinkfile = "%s/%s.%s" % (targetdir, basename, pop.replace(" ","_"))
         newfiles[pop] = plinkfile+".tped"
         if os.path.exists( plinkfile+".tped" ) and not force : print "Already exists"; continue
         print plinkfile
-        command = "vcftools --gzvcf %s" \
-                " --keep %s"\
-                " --remove-filtered-all " \
-                " --maf .01" \
-                " --remove-indels --min-alleles 2 --max-alleles 2" \
-                " --plink-tped --out %s" \
-                % ( vcffile, popfile, plinkfile )
+        command = [ "vcftools","--gzvcf",vcffile,
+                    "--keep",popfile,
+                    "--remove-filtered-all",
+                    "--maf",".005",
+                    "--remove-indels","--min-alleles","2",
+                    "--max-alleles","2",
+                    "--plink-tped","--out",plinkfile]
+                #% ( vcffile, popfile, plinkfile )
                 #" --max-maf .99" \
                 #"--plink-tped" \
                 #" --thin 1000" \
                 #" --FILTER-summary %s" \
 
-        print command
-        out = runCommand( command )
+        print " ".join(command)
+        out = subprocess.check_output( command )
         print out
     return newfiles
 # END vcftools_splitbypop
@@ -74,18 +77,20 @@ def vcftools_makeplink( vcffile, force=forceFlag ):
         print " - File"+plinkfile+".tped already exists. Skipping command!"
         return plinkfile+".tped"
 
-    command = "vcftools --gzvcf %s" \
-        " --remove-filtered-all " \
-        " --remove-indels --min-alleles 2 --max-alleles 2" \
-        " --plink-tped --out %s" \
-        % ( vcffile, plinkfile )
+    command = [ "vcftools","--gzvcf",vcffile,
+                "--remove-filtered-all",
+                "--maf",".005",
+                "--remove-indels","--min-alleles","2",
+                "--max-alleles","2",
+                "--plink-tped","--out",plinkfile ]
+        #% ( vcffile, plinkfile )
         #"--plink-tped" \
         #" --thin 1000" \
         #" --FILTER-summary %s" \
 
-    print command
-    out = runCommand( command )
-    print out
+    print " ".join(command)
+    out = subprocess.check_output( command )
+    #print out
     return plinkfile+".tped"
 # END vcftools_makeplink
 
@@ -252,10 +257,10 @@ def plink_recode12( pedfile, force=forceFlag ) :
     # --1
     if not os.path.exists( recodefile+".ped" ) or force:
         command = "plink --noweb --tfile %s" \
-                " --geno 0.1" \
-                " --maf 0.01" \
                 " --recode12 --out %s" \
                 % ( basename, recodefile )
+                #" --geno 0.1" \
+                #" --maf 0.01" \
         print command
         out = runCommand( command )
         print out
@@ -350,10 +355,10 @@ def run_festim( pedfile, force=False, iterations="2000" ) :
     ibcfile = "%s/%s_inbreedings.out" % (filepath,basename)
     if os.path.exists(ibcfile) and not force : return ibcfile
     print "FEstimfile:",festimfile,"IBCfile:",ibcfile
-    command = "FEstim --mplink %s/%s" \
-            " --SE --iterMC 2000" \
-            " --ped %s > %s" \
-            % ( filepath, basename, pedfile, festimfile )
+    #command = "FEstim --mplink %s/%s" \
+            #" --SE --iterMC 2000" \
+            #" --ped %s > %s" \
+            #% ( filepath, basename, pedfile, festimfile )
 
     command = ["FEstim", "--mplink", "%s/%s" % (filepath,basename),"--SE", "--iterMC",iterations, "--ped", pedfile]
             #% ( filepath, basename, pedfile, festimfile )
@@ -381,20 +386,21 @@ def findMid(s, ch):
     allindexes= [i for i, ltr in enumerate(s) if ltr == ch]
     return allindexes[len(allindexes)/2]
 
-######################################################################
+################################################################################
 # plotIBC
-######################################################################
-def plotIBC( ibcfile, factor="continent" ):
+################################################################################
+def plotIBC( ibcfile, patientdata, factor="continent" ):
     print "Running plotIBC:",ibcfile
 
     filepath, basename, suffix = getBasename( ibcfile )
-    patientannotation = "./resources/annotation/patientannotation.ped"
-    patientdata = read_csv( patientannotation, sep="\t" )
+    #patientannotation = "./resources/annotation/patientannotation.ped"
+    #patientdata = read_csv( patientannotation, sep="\t" )
     ibcdata = read_csv( ibcfile, sep="\t" )
 
     #ibcdata["Family"] = [x[:findMid(x,"_")] for x in ibcdata["Individual"].tolist()]
     #ibcdata["Individual.ID"] = [x[findMid(x,"_")+1:] for x in ibcdata["Individual"].tolist()]
-    alldata = merge(ibcdata[["Individual.ID","F","StdE","A"]],patientdata[["Individual.ID",factor]],how="left",on="Individual.ID")
+    alldata = merge(ibcdata[["Individual.ID","F","StdE","A"]],
+                    patientdata[["Individual.ID",factor]],how="left",on="Individual.ID")
     filtdata = alldata[alldata[factor].notnull()]
     filtdata.F = filtdata.F.map(float)
     print filtdata.head(10)
@@ -423,7 +429,7 @@ def plotIBC( ibcfile, factor="continent" ):
     grdevices.dev_off()
 # END plotIBC
 
-######################################################################
+################################################################################
 # plotPlinkIBC
 # FID       Family ID
 # IID       Individual ID
@@ -431,31 +437,32 @@ def plotIBC( ibcfile, factor="continent" ):
 # E(HOM)    Expected number of homozygotes
 # N(NM)     Number of non-missing genotypes
 # F         F inbreeding coefficient estimate
-######################################################################
-def plotPlinkIBC( ibcfile, factor="continent" ):
-    print "Running plotIBC:",ibcfile
+################################################################################
+def plotPlinkIBC( ibcfile, patientdata, factor="continent" ):
+    print "Running plotPlinkIBC:",ibcfile
 
     filepath, basename, suffix = getBasename( ibcfile )
 
-    patientannotation = "./resources/annotation/patientannotation.ped"
-    patientdata = read_csv( patientannotation, sep="\t" )
+    #patientannotation = "./resources/annotation/patientannotation.ped"
+    #patientdata = read_csv( patientannotation, sep="\t" )
     ibcdata = read_csv( ibcfile, sep="\t" )
     #print ibcdata.head(10)
     #print ibcdata.columns
     #ibcdata.columns = ["blank","Family","Individual.ID","Homozygotes","Expected","Nonmissing","F"]
     alldata = merge(ibcdata[["Individual.ID","F","Homozygotes","Expected"]],patientdata[["Individual.ID",factor]],how="left",on="Individual.ID")
+    alldata = addSampleAnnotation( ibcdata, "Individual.ID" )
     #print alldata.head(3)
     #print alldata[alldata[factor].isnull()].shape
     filtdata = alldata[alldata[factor].notnull()]
 
     r_dataframe = com.convert_to_r_dataframe(filtdata)
-    p = ggplot2.ggplot(r_dataframe) + \
-                ggplot2.aes_string(x = "factor("+factor+")",y="F" ) + \
-                ggplot2.geom_boxplot(notch=True) + \
-                ggplot2.theme(**mytheme) + \
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) + \
-                ggplot2.ggtitle("IBC by "+factor.capitalize()) + \
-                ggplot2.scale_y_continuous("Inbreeding Coefficient (plink)")
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x = "factor("+factor+")",y="F" ) +
+                ggplot2.geom_boxplot(notch=True) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
+                ggplot2.ggtitle("IBC by "+factor.capitalize()) +
+                ggplot2.scale_y_continuous("Inbreeding Coefficient (plink)") +
+                ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
                 #ggplot2.stat_smooth(method="lm", se=False)
@@ -469,16 +476,16 @@ def plotPlinkIBC( ibcfile, factor="continent" ):
     grdevices.dev_off()
 # END plotPlinkIBC
 
-######################################################################
+################################################################################
 # ibcCorrelation
-######################################################################
-def ibcCorrelation( plinkibc, festimibc, factor="continent" ):
+################################################################################
+def ibcCorrelation( plinkibc, festimibc, patientdata, factor="continent" ):
     print "Running ibcCorrelation:",plinkibc
 
     filepath, basename, suffix = getBasename( plinkibc )
 
-    patientannotation = "./resources/annotation/patientannotation.ped"
-    patientdata = read_csv( patientannotation, sep="\t" )
+    #patientannotation = "./resources/annotation/patientannotation.ped"
+    #patientdata = read_csv( patientannotation, sep="\t" )
 
     plinkibcdata = read_csv( plinkibc, sep="\t" )
     #print plinkibcdata.head(3)
@@ -499,12 +506,13 @@ def ibcCorrelation( plinkibc, festimibc, factor="continent" ):
     alldata.F = alldata.F.map(float)
 
     r_dataframe = com.convert_to_r_dataframe(alldata)
-    p = ggplot2.ggplot(r_dataframe) + \
-                ggplot2.aes_string(x = "factor("+factor+")",y="F" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Type)"),notch=True) + \
-                ggplot2.theme(**mytheme) + \
-                ggplot2.ggtitle("IBC by Regions") + \
-                ggplot2.scale_y_continuous("Inbreeding Coefficient")
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x = "factor("+factor+")",y="F" ) +
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(Type)"),notch=True) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
+                ggplot2.ggtitle("IBC by Regions") +
+                ggplot2.scale_y_continuous("Inbreeding Coefficient") +
+                ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
                 #ggplot2.stat_smooth(method="lm", se=False)
@@ -557,11 +565,11 @@ def wavg(group):
     w = group['N']
     return (d * w).sum() / w.sum()
 
-######################################################################
+################################################################################
 # ibcCountryCorrelation
-######################################################################
+################################################################################
 def ibcCountryCorrelation( ibcdata, basename ):
-    print "Running ibcCorrelation:",basename
+    print "Running ibcCountryCorrelation:",basename
 
     countryrates = read_csv("./resources/consangrates_norm.txt",sep="\t")
     countryrates = countryrates[~countryrates.Country.isin(["Sudan","Israel"])]
@@ -609,12 +617,13 @@ def ibcCountryCorrelation( ibcdata, basename ):
     withrates.F = withrates.F.map(float)
 
     r_dataframe = com.convert_to_r_dataframe(withrates)
-    p = ggplot2.ggplot(r_dataframe) + \
-                ggplot2.aes_string(x = "factor(Continent)",y="F" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(ContConsangPercent)"),notch=True) + \
-                ggplot2.theme(**mytheme) + \
-                ggplot2.ggtitle("IBC by Continent") + \
-                ggplot2.scale_y_continuous("Inbreeding Coefficient")
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x = "factor(Continent)",y="F" ) +
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(ContConsangPercent)"),notch=True) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
+                ggplot2.ggtitle("IBC by Continent") +
+                ggplot2.scale_y_continuous("Inbreeding Coefficient") +
+                ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
     if basename is None : basename = "test"
@@ -638,12 +647,13 @@ def ibcCountryCorrelation( ibcdata, basename ):
     withrates.F = withrates.F.map(float)
 
     r_dataframe = com.convert_to_r_dataframe(withrates)
-    p = ggplot2.ggplot(r_dataframe) + \
-                ggplot2.aes_string(x = "factor(Origin)",y="F" ) + \
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(CountryConsangPercent)"),notch=True) + \
-                ggplot2.theme(**mytheme) + \
-                ggplot2.ggtitle("IBC by Origin") + \
-                ggplot2.scale_y_continuous("Inbreeding Coefficient")
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x = "factor(Origin)",y="F" ) +
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(CountryConsangPercent)"),notch=True) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
+                ggplot2.ggtitle("IBC by Origin") +
+                ggplot2.scale_y_continuous("Inbreeding Coefficient") +
+                ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
     if basename is None : basename = "test"
@@ -658,10 +668,10 @@ def ibcCountryCorrelation( ibcdata, basename ):
     print out
 # END ibcCountryCorrelation
 
-######################################################################
-# plotPlinkIBC
-######################################################################
-#def plotPlinkIBC( bedfile ) :
+################################################################################
+# plotPlinkIBCold
+################################################################################
+#def plotPlinkIBCold( bedfile ) :
     #write2log( " - Running:"+whoami(), True )
     #print "Target File:",bedfile 
     #targetdir, filename, suffix = getBasename(bedfile )
@@ -669,11 +679,11 @@ def ibcCountryCorrelation( ibcdata, basename ):
     #print "Command",command
     #output = runCommand( command )
     #return
-# plotPlinkIBC
+# plotPlinkIBCold
 
-######################################################################
+################################################################################
 # mergeFEstimFiles
-######################################################################
+################################################################################
 def mergeFEstimFiles( festimfiles, targetfile, patientdata ) :
     print "Running mergeFEstimFiles", festimfiles
     shortids = [x[:x.find('_')] if len(x) > 21 and x.find('_') > 0 else x for x in patientdata["Individual.ID"].tolist()]
@@ -701,9 +711,9 @@ def mergeFEstimFiles( festimfiles, targetfile, patientdata ) :
     alldata_filt.to_csv( targetfile, sep="\t", index=False )
 # END mergeFEstimFiles 
 
-######################################################################
+################################################################################
 # mergehetfiles
-######################################################################
+################################################################################
 def mergehetfiles( hetfiles, targetfile, patientdata ) :
 
     shortids = [x[:x.find('_')] if len(x) > 21 and x.find('_') > 0 else x for x in patientdata["Individual.ID"].tolist()]
@@ -723,17 +733,18 @@ def mergehetfiles( hetfiles, targetfile, patientdata ) :
     alldata_filt.to_csv( targetfile, sep="\t", index=False )
 # END mergehetfiles
 
-######################################################################
+################################################################################
 # calculateIBC
-######################################################################
+################################################################################
 def calculateIBC( targetfile, rerun=False ) :
     write2log(" - Running "+whoami(), True)
     print "FEstim Targetfile:",targetfile
 
     # Parse Patient data
-    patientannotation = "./resources/annotation/patientannotation.ped"
-    patientdata = read_csv( patientannotation, sep="\t" )
-    #patientdata = parsePatientPed( patientannotation )
+    #patientannotation = "./resources/annotation/patientannotation.ped"
+    #patientdata = read_csv( patientannotation, sep="\t" )
+    targetpats = patientInfo.getPats( targetfile )
+    patientdata = sampleAnnotation(targetpats)
 
     filepath, basename, suffix = getBasename( targetfile )
     print filepath, basename, suffix
@@ -767,10 +778,12 @@ def calculateIBC( targetfile, rerun=False ) :
         # Modify ped
         modped = modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
         bedfile = run_plink_convert(modped, force=rerun)
-        hetfile = run_plink_het( bedfile, force=rerun )
+        #hetfile = run_plink_het( bedfile, force=rerun )
         frqfile = plink_makefrqfile( modped, force=rerun )
         #hapfile = plink_runhaplotyping( modped )
         newfrq, excludebase = excludeSnps( modped, force=rerun )
+        bedfile = run_plink_convert(excludebase+".ped", force=rerun)
+        hetfile = run_plink_het( bedfile, force=rerun )
         ibcfestim = run_festim( excludebase+".ped", force=rerun )
         hetfiles.append(hetfile)
         festimfiles.append(ibcfestim)
@@ -782,14 +795,11 @@ def calculateIBC( targetfile, rerun=False ) :
     print "Hetfile:",hetfile
     print "Festim:",ibcfestim
 
-    plotPlinkIBC( hetfile )
-    plotPlinkIBC( hetfile, factor="ethnicity" )
-
-    plotIBC( ibcfestim )
-    plotIBC( ibcfestim, factor="ethnicity" )
-
-    ibcCorrelation( hetfile, ibcfestim )
-    ibcCorrelation( hetfile, ibcfestim, factor="ethnicity" )
+    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    for factor in targetfactors :
+        plotPlinkIBC( hetfile, patientdata, factor )
+        plotIBC( ibcfestim, patientdata, factor )
+        ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
 
     filepath, basename, suffix = getBasename( hetfile )
 
@@ -800,9 +810,78 @@ def calculateIBC( targetfile, rerun=False ) :
     return recodefile
 # End calculateIBC
 
-######################################################################
+################################################################################
+# calculateIBC_all
+################################################################################
+def calculateIBC_all( targetfile, rerun=False ) :
+    write2log(" - Running "+whoami(), True)
+    print "FEstim Targetfile:",targetfile
+
+    # Parse Patient data
+    #patientannotation = "./resources/annotation/patientannotation.ped"
+    #patientdata = read_csv( patientannotation, sep="\t" )
+    targetpats = patientInfo.getPats( targetfile )
+    patientdata = sampleAnnotation(targetpats)
+
+    filepath, basename, suffix = getBasename( targetfile )
+    print filepath, basename, suffix
+    targetdir = "%s/ibc/" % filepath
+    makeDir(targetdir)
+    filepath, basename, suffix = getBasename( targetfile )
+    cptargetfile = targetdir+basename+suffix+".gz"
+
+    if not os.path.exists(cptargetfile) :
+        print "Copy targetfile:",cptargetfile
+        out = runCommand( "cp %s/%s%s* %s" % (filepath,basename,suffix, targetdir) )
+    #if suffix != ".vcf" :
+        #print "Error: Unknown File type:", basename, suffix
+        #sys.exit(1)
+
+    vcffile = cptargetfile
+    pedfile = vcftools_makeplink(vcffile, force=rerun )
+
+    hetfiles = []
+    festimfiles = []
+
+    recodefile = plink_recode12( pedfile, force=rerun )
+    print "#"*50
+    print "Made recodefile:",recodefile
+    # Modify ped
+    modped = modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
+    bedfile = run_plink_convert(modped, force=rerun)
+    hetfile = run_plink_het( bedfile, force=rerun )
+    frqfile = plink_makefrqfile( modped, force=rerun )
+    #hapfile = plink_runhaplotyping( modped )
+    newfrq, excludebase = excludeSnps( modped, force=rerun )
+    ibcfestim = run_festim( excludebase+".ped", force=rerun )
+    hetfiles.append(hetfile)
+    festimfiles.append(ibcfestim)
+    
+    hetfile = "%s/%s.het" % (targetdir, basename)
+    mergehetfiles( hetfiles, hetfile, patientdata )
+    ibcfestim = "%s/%s.ibc" % (targetdir, basename)
+    mergeFEstimFiles( festimfiles, ibcfestim, patientdata )
+    print "Hetfile:",hetfile
+    print "Festim:",ibcfestim
+
+    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    for factor in targetfactors :
+        plotPlinkIBC( hetfile, patientdata, factor )
+        plotIBC( ibcfestim, patientdata, factor )
+        ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
+
+    filepath, basename, suffix = getBasename( hetfile )
+
+    plinkibcdata = read_csv( hetfile, sep="\t" )
+    ibcCountryCorrelation( plinkibcdata, basename+"_plink" )
+    festimibcdata = read_csv( ibcfestim, sep="\t" )
+    ibcCountryCorrelation( festimibcdata, basename+"_festim" )
+    return recodefile
+# End calculateIBC_all
+
+################################################################################
 # Main
-######################################################################
+################################################################################
 if __name__ == "__main__" :
     os.chdir("..")
     optlist, args = getopt.getopt( sys.argv[1:], "r:ot")
@@ -820,42 +899,39 @@ if __name__ == "__main__" :
     print "Using dataset:", dataset
     path = os.path.abspath("./rawdata/")
     #vcffile = path+"ciliopathies/ciliopathies.unfilt.vcf.gz"
-    if dataset == "ciliopathies" :
-        filename = "/home/escott/workspace/inbreed/rawdata/ciliopathies/ciliopathies.chimp.recode.vcf.gz"
-    elif dataset == "daily" :
-        filename = "/home/escott/workspace/variome/rawdata/daily/daily.chimp.regions.filt.samp.samp.vcf.gz"
+    #if dataset == "ciliopathies" :
+        #filename = "/home/escott/workspace/inbreed/rawdata/ciliopathies/ciliopathies.chimp.recode.vcf.gz"
+    if dataset == "daily" :
+        filename = "/home/escott/workspace/variome/rawdata/daily/daily.clean.vcf.gz"
     elif dataset == "onekg" :
-        filename = "/home/escott/workspace/variome/rawdata/onekg/onekg.chimp.regions.filt.samp.samp.vcf.gz"
-    elif dataset == "test" :
-        filename = "/home/escott/workspace/variome/rawdata/test/everything_set1.chr1.snp.chimp.regions.filt.samp.samp.vcf.gz"
+        filename = "/home/escott/workspace/variome/rawdata/onekg/main/onekg.clean.vcf.gz"
+    elif dataset == "mevariome" :
+        filename = "/home/escott/workspace/variome/rawdata/mevariome/main/variome.clean.vcf.gz"
+    elif dataset == "merge1kg" :
+        filename = "/home/escott/workspace/variome/rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    elif dataset == "mergedaly" :
+        filename = "/home/escott/workspace/variome/rawdata/mergedaly/main/meceu.clean.vcf.gz"
     elif dataset == "test2" :
         filename = "/home/escott/workspace/variome/rawdata/test2/main/test2.clean.vcf.gz"
-    elif dataset == "fowzan" :
-        filename = "/home/escott/workspace/variome/rawdata/fowzan/fowzan.snp.recal.chimp.regions.recode.recode.recode.vcf.gz"
     elif dataset == "casanova" :
         filename = "/home/escott/workspace/variome/rawdata/casanova/casanova.snp.recal.chimp.regions.filt.samp.vcf.gz"
-    elif dataset == "variome" :
-        filename = "/home/escott/workspace/variome/rawdata/variome/variome_snps.regions.filt.samp.samp.vcf.gz"
-    elif dataset == "variome1" :
-        filename = "/home/escott/workspace/variome/rawdata/variome1/variome.regions.filt.samp.samp.vcf.gz"
-    elif dataset == "merged" :
-        filename = "/home/escott/workspace/variome/rawdata/merged/merged.chimp.regions.filt.samp.samp.vcf.gz"
-    elif dataset == "hgdp" :
-        filename = "/home/escott/workspace/variome/rawdata/hgdp/HGDP_938.filt.samp.samp.vcf.gz"
     else : print "Error: no dataset provided:",dataset
 
     outdir = "./results/liftover/tmp"
 
-    festimout = "results/test_inbreedings.out"
     #plinkout = "results/plink_ibc.het"
     #plinkout = "rawdata/merged/ibc/merged.chimp.regions.filt.samp.plink.recode12.mod.het"
-    plinkout = "rawdata/onekg/ibc/onekg.chimp.regions.filt.samp.samp.plink.recode12.mod.het"
 
     changeLogFile( LOGDIR+"/runfestim_test.log" )
 
     print optlist,"Dataset:",dataset,"Filename:",filename
-    if optlist.has_key("-t") : ibcCountryCorrelation( plinkout, festimout )
-    elif filename is not None : calculateIBC( filename, rerun=optlist.has_key("-o") )
+    if optlist.has_key("-t") : 
+        festimout = "results/test_inbreedings.out"
+        plinkout = "rawdata/onekg/ibc/onekg.chimp.regions.filt.samp.samp.plink.recode12.mod.het"
+        ibcCountryCorrelation( plinkout, festimout )
+    elif filename is not None : 
+        calculateIBC_all( filename, rerun=optlist.has_key("-o") )
+        #calculateIBC( filename, rerun=optlist.has_key("-o") )
 
     #plotIBC() 
     #ibcCorrelation( plinkout, festimout )
@@ -865,5 +941,17 @@ if __name__ == "__main__" :
     #else :
         #write2log( "Error: no filename submitted" )
 
+    #elif dataset == "fowzan" :
+        #filename = "/home/escott/workspace/variome/rawdata/fowzan/fowzan.snp.recal.chimp.regions.recode.recode.recode.vcf.gz"
+    #elif dataset == "test" :
+        #filename = "/home/escott/workspace/variome/rawdata/test/everything_set1.chr1.snp.chimp.regions.filt.samp.samp.vcf.gz"
+    #elif dataset == "variome" :
+        #filename = "/home/escott/workspace/variome/rawdata/variome/variome_snps.regions.filt.samp.samp.vcf.gz"
+    #elif dataset == "variome1" :
+        #filename = "/home/escott/workspace/variome/rawdata/variome1/variome.regions.filt.samp.samp.vcf.gz"
+    #elif dataset == "merged" :
+        #filename = "/home/escott/workspace/variome/rawdata/merged/merged.chimp.regions.filt.samp.samp.vcf.gz"
+    #elif dataset == "hgdp" :
+        #filename = "/home/escott/workspace/variome/rawdata/hgdp/HGDP_938.filt.samp.samp.vcf.gz"
 
 

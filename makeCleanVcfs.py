@@ -185,10 +185,10 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     hk.makeDir( targetdir )
     outprefix = "%s/%s" % (targetdir, filename)
 
-    #finalkeepfile = outprefix+".finalpats"
-    #if os.path.exists(finalkeepfile) and not force:
-        #print "Finalpats file exists! skipping....", finalkeepfile
-        #return finalkeepfile
+    finalkeepfile = outprefix+".finalpats"
+    if os.path.exists(finalkeepfile) and not force:
+        print "Finalpats file exists! skipping....", finalkeepfile
+        return finalkeepfile
 
     autoremove = []
     if os.path.exists(toremove):

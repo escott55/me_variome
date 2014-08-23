@@ -141,8 +141,10 @@ def pcaOutlierAnalysis( bedfile, targetdir=None, force=False,
         targetregions = ["Morocco","Algeria","Tunisia","Libya","Egypt","Saudi Arabia","Oman","Qatar","UAE","Yemen","Jordan","Palestine","Lebanon","Syria","Kuwait","Iraq","Turkey"] + ["Iran","Pakistan","Afganistan"]
         regions = [x for x in regions if x in targetregions]
     elif annotcol=="GeographicRegions" :
-        targetregions = [x.replace(" ",".") for x in target_geographic_regions]
-        regions = [x for x in regions if x in targetregions]
+        exclude = ["Oceania","America","Unknown"]
+        targetregions = [x.replace(" ",".") 
+                         for x in target_geographic_regions if x not in exclude]
+        regions = [x for x in targetregions if x in regions]
     elif annotcol=="GeographicRegions2" :
         targetregions = [x.replace(" ",".") for x in target_geographic_regions2]
         print targetregions
@@ -505,12 +507,13 @@ if __name__ == "__main__":
     targetdir = os.path.join(filepath,"pca")
 
 
-    annotationcolumns = ["GeographicRegions","GeographicRegions2","Country","Continent2","ethnicity","Source"]
+    #annotationcolumns = ["GeographicRegions","GeographicRegions2","Country","Continent2","ethnicity","Source"]
     #annotationcolumns = ["GeographicRegions2","GRsub"]
+    annotationcolumns = ["GeographicRegions"]
     for annot in annotationcolumns :
         targetdir = os.path.join(filepath,"pca/"+annot)
         #fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
-        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="2:3" )
+        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="1:2" )
         print outliers
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
