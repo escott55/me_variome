@@ -8,6 +8,7 @@ import string
 import random
 from scipy import stats
 from scipy.stats import ttest_ind
+from scipy.stats import gaussian_kde
 import math
 import csv
 import pybedtools
@@ -352,21 +353,22 @@ def psiAnalysis( lofvariants, randvariants, targetdir, prefix ) :
 
 def plotPSIClasses( allpsi, targetdir, prefix ):
     print allpsi.head()
-    allpsi = allpsi[allpsi.PSI != "-"]
+    allpsi = allpsi[allpsi.PSI != "-"].drop_duplicates()
     allpsi.PSI = allpsi.PSI.astype("float")
     r_dataframe = com.convert_to_r_dataframe(allpsi)
     #r_pvals = com.convert_to_r_dataframe(pvals)
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x="PSI") +
-                ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)")) +
-                ggplot2.ggtitle("PSI distribution") +
+                ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)"),size=2) +
+                #ggplot2.ggtitle("PSI distribution") +
                 ggplot2.scale_y_continuous("Density") +
+                ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
                 #ggplot2.scale_x_discrete("ME AF") +
                 ggplot2.theme(**mytheme) )
                 #ggplot2.stat_smooth(method="lm", se=False)+
-    figname = "%s/%s_psiclassdensity.png" % (targetdir,prefix)
+    figname = "%s/%s_psiclassdensity.pdf" % (targetdir,prefix)
     print "Writing file:",figname
-    grdevices.png(figname)
+    grdevices.pdf(figname)
     p.plot()
     grdevices.dev_off()
 # END plotPSIClasses
@@ -378,19 +380,207 @@ def plotPSIByClass(allpsi, targetdir, prefix) :
     #r_pvals = com.convert_to_r_dataframe(pvals)
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x="PSI") +
-                ggplot2.geom_density(ggplot2.aes_string(colour="factor(Vclass)")) +
+                ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)"),size=2) +
                 ggplot2.ggtitle("PSI distribution") +
                 ggplot2.scale_y_continuous("Density") +
+                ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
                 #ggplot2.scale_x_discrete("ME AF") +
                 ggplot2.theme(**mytheme) )
                 #ggplot2.stat_smooth(method="lm", se=False)+
-    figname = "%s/%s_psidensity.png" % (targetdir,prefix)
+    figname = "%s/%s_psidensity.pdf" % (targetdir,prefix)
     print "Writing file:",figname
-    grdevices.png(figname)
+    grdevices.pdf(figname)
     p.plot()
     grdevices.dev_off()
 # END plotPSIByClass
 
+def flyAnalysis( targetgenes ) :
+    flygenes = read_csv( "resources/flybase/gene_summaries.tsv", sep="\t",
+                       header=None,names=["flygene","summary"],skiprows=[0])
+    flygenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
+                          for x in flygenes["summary"]]
+    flygenes = (flygenes.sort("lethal")
+                    .groupby("flygene").first().reset_index())
+    ensembl = (read_csv( "resources/flybase/ensembl2flybase.tsv", sep="\t")
+               .groupby(["Drosophila Ensembl Gene ID","Associated Gene Name"])
+               .size().reset_index())
+
+    flygenes_annot = merge( flygenes, ensembl, left_on="flygene",
+                           right_on="Drosophila Ensembl Gene ID" )
+    #print "Fly! all homologues"
+    #print hk.dfTable(flygenes.lethal)
+
+    loffly = merge( targetgenes, flygenes_annot, left_on="Gene",
+                   right_on="Associated Gene Name")
+
+    justfly = loffly.groupby(["flygene","lethal"]).size().reset_index()
+    print "Fly!", len(justfly)
+    print hk.dfTable(justfly.lethal)
+# END flyAnalysis
+
+def mouseAnalysis( targetgenes ): 
+    mgigenes = read_csv("resources/mgi/mgi_allclasses.txt", sep="\t",
+                        header=None, names=["Gene","GID","Phenotype","MGI"],
+                        dtype={'Gene':str})
+
+    mgigenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
+                          for x in mgigenes["Phenotype"]]
+    mgigenes_sub = (mgigenes.sort("lethal")
+                    .groupby("Gene").first().reset_index())
+
+    lofmgi = merge( targetgenes, mgigenes_sub, on="Gene" )
+    print lofmgi.head()
+
+    print "Mouse", len(lofmgi)
+    print hk.dfTable(lofmgi.lethal)
+    return lofmgi
+    #print lofgenes.shape
+# END mouseAnalysis
+
+def varsum( gcounts1, gcounts2 ) :
+    ref1,het1,hom1 = [int(x) if x!="." else 0  for x in gcounts1.split(":")]
+    ref2,het2,hom2 = [int(x) if x!="." else 0  for x in gcounts2.split(":")]
+    return "%d:%d:%d" % (ref1+ref2, het1+het2, hom1+hom2)
+# END varsum
+
+def bootStrap( lofvars, homvars, tlength, targetdir, prefix ) :
+    samplings = []
+    ind = np.linspace(0,100,512)
+    kde = gaussian_kde( homvars[homvars.PSI != "-"].PSI.map(float).tolist() )
+    for boot in range(0,1000) :
+        kdesub = gaussian_kde( kde.resample(tlength) )
+        kdedf = DataFrame( {"subsetname":"Random%d" % boot, 
+                          "Density":kdesub.evaluate(ind), "PSI":ind} )
+        samplings.append( kdedf )
+
+    samplings = concat( samplings ).reset_index(drop=True)
+
+    quants = samplings.groupby(["PSI"])["Density"].quantile([.025,.5,.975]).reset_index()
+    quants.rename(columns={'level_1':"Quantile",0:"Density"}, inplace=True )
+    quants["linetype"] = ["Mean" if x == .5 else "95% threshold" for x in quants.Quantile]
+
+    if "vclass" not in lofvars.columns.tolist() : 
+        lofvars["vclass"] == "LoF"
+
+    lofvars_sub = lofvars[lofvars.PSI != "-"].copy()
+    lofvars_sub.PSI = lofvars_sub.PSI.astype(float)
+    lofdf = []
+    for vclass,lofclass in lofvars_sub.groupby("vclass") :
+        kde = gaussian_kde( lofvars_sub[lofvars_sub.vclass == vclass].PSI.tolist() )
+        tmpdf = DataFrame({"vclass":vclass, "Density":kde.evaluate(ind), "PSI":ind})
+        lofdf.append( tmpdf )
+
+    lofdf = concat( lofdf ).reset_index(drop=True)
+
+    rsamplings = com.convert_to_r_dataframe(samplings)
+    rlofvars = com.convert_to_r_dataframe(lofdf)
+    rquants = com.convert_to_r_dataframe(quants)
+    rquants = fixRLevels( rquants,"linetype", ["Mean","95% threshold"] )
+    #r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(rlofvars) +
+                ggplot2.aes_string(x="PSI",y="Density") + #,group="vclass"
+                ggplot2.geom_line( ggplot2.aes_string(x="PSI", y="Density", group="factor(subsetname)"),
+                                  color="grey", data=rsamplings ) +
+                ggplot2.geom_line( ggplot2.aes_string(x="PSI",y="Density",linetype="factor(linetype)", 
+                                                      group="factor(Quantile)"),
+                                  color="black", data=rquants ) +
+                ggplot2.geom_line( ggplot2.aes_string(color="factor(vclass)") ) +
+                #ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)"),size=1.5,color="blue") +
+                ggplot2.scale_y_continuous("Density") +
+                #ggplot2.scale_x_continuous("PSI") +
+                ggplot2.scale_linetype("Confidence Interval") +
+                ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
+                #ggplot2.theme(**{'legend.position':"none"}) +
+                #ggplot2.ggtitle("PSI distribution") +
+                #ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_psibootstrap2.pdf" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.pdf(figname)
+    p.plot()
+    grdevices.dev_off()
+# END bootStrap
+
+def bootStrap2( homvars, tlength, targetdir, prefix ):
+    bootvars = []
+    for boot in range(0,100) :
+        randrows = random.sample(homvars.index, tlength ) #len(lofvariants)
+        bootset = homvars.ix[randrows]
+        bootset["subsetname"] = "Random%d" % boot
+        bootvars.append( bootset )
+
+    bootvars = concat( bootvars ).reset_index(drop=True)
+    allpsi = bootvars[bootvars.PSI != "-"].drop_duplicates()
+    allpsi.PSI = allpsi.PSI.astype("float")
+    r_dataframe = com.convert_to_r_dataframe(allpsi)
+    #r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="PSI") +
+                ggplot2.geom_density(ggplot2.aes_string(group="factor(subsetname)"),
+                                     color="grey",size=.8) +
+                #ggplot2.ggtitle("PSI distribution") +
+                ggplot2.scale_y_continuous("Density") +
+                ggplot2.theme(**{'legend.position':"none"}) +
+                #ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_psibootstrap.pdf" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.pdf(figname)
+    p.plot()
+    grdevices.dev_off()
+# END bootStrap
+
+def randomSample( vardf, nvars, classname="Random" ) :
+    randrows = random.sample(homvars.index, nvars)
+    randvariants = homvars.ix[randrows]
+    randvariants["subsetname"] = "Random"
+    #randvariants["nhomcarriers"] = [sum([int(y) for y in x.split(":")[2:]]) 
+                                        #for x in randvariants["MidEastNew"]]
+
+    #randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
+    randgenes = randvariants[["Gene","nvars","nhomcarriers"]].groupby("Gene").sum().reset_index()
+    return randvariants, randgenes
+# END randomSample
+
+def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4], region="MidEastNew" ) :
+    tcolumns = ["chrom","pos","vclass","Gene","PSI","FunctionGVS",region]
+    varset = vardf[(vardf.vclass.isin(tvclass)) & (vardf.Priority != "MODIFIER")][tcolumns]
+    #varset = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
+    varset["ncarriers"] = [sum([int(y) for y in x.split(":")[1:]]) 
+                                for x in varset[region]]
+    varset["nhomcarriers"] = [sum([int(y) for y in x.split(":")[2:]]) 
+                                for x in varset[region]]
+
+    #varset = varset[(varset.ncarriers >= 1)]
+    varset = varset[(varset.nhomcarriers > 1)]
+    varset["subsetname"] = classname
+
+    varset["nvars"] = 1
+    vargenes = varset[["Gene","nvars","nhomcarriers"]].groupby("Gene").sum().reset_index()
+
+    # Write out genes to file
+    refseqgenes = read_csv("resources/sqlgenes.txt",sep="\t")
+    refseqgenes["Gene"] = [x.strip() for x in refseqgenes.geneSymbol]
+    print refseqgenes.head()
+    #tmp = merge(lofgenes, refseqgenes[["geneSymbol","entrez"]], left_on="Gene",
+                #right_on="entrez", how="left")
+
+    tmp = (merge(vargenes, refseqgenes[["Gene","entrez"]], 
+                 on="Gene", how="left").drop_duplicates()
+           .sort(["nvars","nhomcarriers"], ascending=[False,False]))
+    print tmp[tmp.entrez.isnull()].head(20)
+    print "Null entrez:",sum(tmp.entrez.isnull())
+    print "Not null entrez:",sum(tmp.entrez.notnull())
+
+    genesfile = os.path.join(targetdir, prefix+"_"+classname+"_genes.tsv")
+    tmp.to_csv(genesfile, sep="\t", index=False)
+
+    return varset, vargenes
+# END prepareVars
 
 ################################################################################
 # Main
@@ -403,7 +593,7 @@ if __name__ == "__main__" :
     #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
     #varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
     varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
-    varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/me1000G.clean_genes.tsv"
+    #varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/me1000G.clean_genes.tsv"
     targetvarfile = hk.copyToSubDir( varfile, "lof" )
 
     targetdir, basename, suffix = hk.getBasename( targetvarfile )
@@ -413,22 +603,28 @@ if __name__ == "__main__" :
     print "Writing file:", psiannotatedfile
     vardf = read_csv(targetvarfile,sep="\t")
     vardf = psiIntersect( vardf, psiannotatedfile )
-    print vardf.head(10)
+    vardf = vardf[ vardf.vclass > 0 ]
+    #print vardf.head(10)
     plotPSIClasses( vardf, targetdir, prefix )
 
+    vardf["MidEastNew"] = [varsum(x,y) for x,y in vardf[["Middle East","South Asia"]].values]
+    vardf["meceu"] = [varsum(x,y) for x,y in vardf[["MidEastNew","Europe"]].values]
+    
+    lofvars, lofgenes = prepareVars( vardf, targetdir, prefix, "LoF", [4], region="MidEastNew" )
 
-    lofvariants = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
-    lofvariants["ncarriers"] = [sum([int(y) for y in x.split(":")[1:]]) 
-                                for x in lofvariants["Middle East"]]
+    homvars, homgenes = prepareVars( vardf, targetdir, prefix, "allhom", [1,2,3,4], region="MidEastNew" )
+    plotPSIClasses( homvars, targetdir, prefix+"_hom" )
 
-    lofvariants = lofvariants[lofvariants.ncarriers > 1]
+    benignvars, benigngenes = prepareVars( vardf, targetdir, prefix, "benign", [1], region="MidEastNew" )
 
-    randrows = random.sample(vardf.index, len(lofvariants))
-    randvariants = vardf.ix[randrows]
+    randvariants, randgenes = randomSample( homvars, len(lofvars), "Random" )
 
-    lofgenes = DataFrame({'Gene':lofvariants.Gene.unique()})
-    randgenes = DataFrame({'Gene':randvariants.Gene.unique()})
+    bootStrap( lofvars, homvars, len(lofvars), targetdir, prefix )
 
+    print "Homvars:",
+    print hk.dfTable(homvars.FunctionGVS)
+    print "LoFvars:",
+    print hk.dfTable(lofvars.FunctionGVS)
     # Intersect with Synthetic Lethal list
     sldata = read_csv("resources/sl_genelist.txt", sep="\t",
                       header=None, names=["Gene","interactions"])
@@ -442,43 +638,36 @@ if __name__ == "__main__" :
     # Intersect with RVIS
     #rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
   
-    mgigenes = read_csv("resources/mgi/mgi_allclasses.txt", sep="\t",
-                        header=None, names=["Gene","GID","Phenotype","MGI"],
-                        dtype={'Gene':str})
+    mouselofgenes = mouseAnalysis( lofgenes )
+    #mouserandgenes = mouseAnalysis( randgenes )
+    flyAnalysis( lofgenes )
+    #flyAnalysis( randgenes )
 
-    mgigenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
-                          for x in mgigenes["Phenotype"]]
-    mgigenes_sub = (mgigenes.sort("lethal")
-                    .groupby("Gene").first().reset_index())
+    tcols = ["Gene","PSI","Lethal"]
+    lofmerge = merge( lofvars[["Gene","PSI"]], mouselofgenes[["Gene","lethal"]], on="Gene" )
+    lofmerge["Lethal"] = ["Mouse lethal" if x == "Lethal" else "Mouse non-lethal" 
+                          for x in lofmerge.lethal]
+    print lofmerge.shape
+    randvariants["Lethal"] = "Random Set"
+    benignvars["Lethal"] = "Benign"
+    allpsi = (concat( [lofmerge[tcols], randvariants[tcols], benignvars[tcols]] )
+              .drop_duplicates().reset_index())
+    allpsi.rename(columns={'Lethal':'vclass'}, inplace=True)
+    print allpsi.head()
+    plotPSIByClass(allpsi, targetdir, prefix+"_mouse")
 
-    lofmgi = merge( lofgenes, mgigenes_sub, on="Gene" )
-    print lofmgi.head()
 
-    print hk.dfTable(lofmgi.lethal)
-    print lofgenes.shape
-
-    flygenes = read_csv( "resources/flybase/gene_summaries.tsv", sep="\t",
-                       header=None,names=["flygene","summary"],skiprows=[0])
-    flygenes["lethal"] = ["Lethal" if x.find("lethal") >= 0 else "Non"
-                          for x in flygenes["summary"]]
-    flygenes = (flygenes.sort("lethal")
-                    .groupby("flygene").first().reset_index())
-    ensembl = (read_csv( "resources/flybase/ensembl2flybase.tsv", sep="\t")
-               .groupby(["Drosophila Ensembl Gene ID","Associated Gene Name"])
-               .size().reset_index())
-
-    flygenes_annot = merge( flygenes, ensembl, left_on="flygene",
-                           right_on="Drosophila Ensembl Gene ID" )
-    print hk.dfTable(flygenes.lethal)
-
-    loffly = merge( lofgenes, flygenes_annot, left_on="Gene",
-                   right_on="Associated Gene Name")
-
-    justfly = loffly.groupby(["flygene","lethal"]).size().reset_index()
-    print hk.dfTable(justfly.lethal)
-
-    tcols = ["Gene","PSI","Vclass"]
-    allpsi = concat( [lofvariants[tcols], randvariants[tcols]] ).reset_index()
+    # plot Fly
+    tcols = ["Gene","PSI","Lethal"]
+    lofmerge = merge( lofvars[["Gene","PSI"]], mouselofgenes[["Gene","lethal"]], on="Gene" )
+    lofmerge["Lethal"] = ["Mouse lethal" if x == "Lethal" else "Mouse non-lethal" 
+                          for x in lofmerge.lethal]
+    lofmerge["vclass"] = lofmerge["Lethal"]
+    bootStrap( lofmerge, homvars, len(lofmerge), targetdir, prefix+"_lethal" )
+    print lofmerge.shape
+    randvariants["Lethal"] = "Random Set"
+    allpsi = concat( [lofmerge[tcols], randvariants[tcols]] ).drop_duplicates().reset_index()
+    allpsi.rename(columns={'Lethal':'vclass'}, inplace=True)
     print allpsi.head()
     plotPSIByClass(allpsi, targetdir, prefix)
 

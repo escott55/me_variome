@@ -26,7 +26,7 @@ import pandas.rpy.common as com
 from rpy2.robjects.packages import importr
 from rpy2.robjects.lib import grid
 from rpy2.robjects.lib import ggplot2
-
+from rpy2.robjects.lib import ggplot2
 
 r = robjects.r
 rprint = robjects.globalenv.get("print")
@@ -34,6 +34,9 @@ rstats = importr('stats')
 grdevices = importr('grDevices')
 gridextra = importr('gridExtra')
 rcolorbrewer = importr('RColorBrewer')
+plyr = importr('plyr')
+#round_any = plyr.round_any
+
 #base = importr('base')
 #head = robjects.r['head']
 #summary = robjects.r['summary']
@@ -57,6 +60,7 @@ def makeLargePalette(ncols=12) :
 mytheme = {
             'panel.background':ggplot2.element_rect(fill='white',colour='white'),
             'axis.text':ggplot2.element_text(colour="black",size=15),
+            'axis.line':ggplot2.ggplot2.element_line(size = 1.2, colour="black"),
             'axis.title':ggplot2.element_text(colour="black",size=15),
             'plot.title':ggplot2.element_text(face="bold", size=20,colour="black"),
             'panel.grid.minor':ggplot2.element_blank(),
@@ -64,7 +68,6 @@ mytheme = {
             'strip.text.y':ggplot2.element_text(colour="black",face="bold",size=15),
             'strip.text.x':ggplot2.element_text(colour="black",face="bold",size=15)
             }
-            #'axis.line':ggplot2.theme_line(size = 1.2, colour="black"),
             #'panel.grid.major':ggplot2.theme_line(colour = "grey90"),
 pointtheme = {
             'panel.background':ggplot2.element_rect(fill='white',colour='black',size=2),
@@ -83,6 +86,8 @@ admixtheme = {
             'axis.text.y': ggplot2.element_blank(),
             'axis.title.x':ggplot2.element_blank(),
             'axis.title.y':ggplot2.element_blank(),
+            'panel.grid.major':ggplot2.element_blank(),
+            'panel.grid.minor':ggplot2.element_blank(),
             'legend.position':"none",
             'strip.text.x':ggplot2.element_text(size=6, colour="black",angle=0),
             'strip.text.y':ggplot2.element_text(size=12, face="bold", colour="black"),
@@ -90,6 +95,22 @@ admixtheme = {
             'axis.ticks':ggplot2.element_blank()
             }
             #'strip.text':ggplot2.element_text(size=8, colour="blue",angle=90),
+
+ribbontheme = {
+            'panel.background':ggplot2.element_rect(fill='white',colour='white'),
+            'axis.text.y': ggplot2.element_text(colour="black",size=15),
+            'axis.text.x': ggplot2.element_blank(),
+            'axis.title':ggplot2.element_text(colour="black",size=15),
+            #'axis.title.x':ggplot2.element_blank(),
+            #'axis.title.y':ggplot2.element_blank(),
+            'panel.grid.major':ggplot2.element_blank(),
+            'panel.grid.minor':ggplot2.element_blank(),
+            #'panel.margin':unit(2, "lines") # cant find unit....
+            'strip.text.x':ggplot2.element_text(size=6, colour="black",angle=45),
+            'strip.text.y':ggplot2.element_text(size=12, face="bold", colour="black"),
+            'strip.background':ggplot2.element_rect(colour="red", fill="white"),
+            'axis.ticks':ggplot2.element_blank()
+            }
 
 pointtheme_nolegend = {
             'panel.background':ggplot2.element_blank(),
@@ -123,6 +144,43 @@ pointtheme_nolegend = {
 #}
 
 ANNOTATIONFILE = "/home/escott/workspace/variome/resources/annotation/patientannotation.ped"
+
+region2countries = ({'East Asia':['China','Japan'],
+                     'Africa':['Burkina Faso','Nigeria','South Africa','Sudan','Tanzania'],
+                     'Europe':['Austria','Belgium','Slovakia','France','Hungary','Ireland',
+                               'Italy','Netherlands','Norway','Portugal','Spain','Sweden',
+                               'UK','Yugoslavia'],
+                     'Middle East':['Algeria','Bahrain','Egypt','Iraq','Jordan','Kuwait',
+                                    'Lebanon','Libya','Morocco','Oman','Palestine','Qatar',
+                                    'Saudi Arabia','Syria','Tunisia','Turkey','UAE','Yemen',
+                                    'Iran','Afghanistan','Pakistan'],
+                     'South East Asia':['Bangladesh','India','Lakshadweep','Sri Lanka'],
+                     'Oceania':['Indonesia','Malaysia','Papua New Guinea','Philippines','Singapore'],
+                     'Northeast Africa':['Egypt','Libya'],
+                     'Northwest Africa':['Algeria','Morocco','Tunisia'],
+                     'Arabian Peninsula':['Saudi Arabia','United Arab Emirates','UAE','Yemen',
+                                           'Oman','Bahrain','Kuwait'],
+                     'Syrian Desert':['Iraq','Syria','Jordan','Lebanon','Palestine'],
+                     'Central Asia':['Iran','Afghanistan','Pakistan'],
+                     'TSI':['Italy'],
+                     'IBS':['Spain'],
+                     'GBR':['UK','England'],
+                     'FIN':['Finland'],
+                     'CEU':['United States'],
+                     'CHB':['China'],
+                     'CHS':['China'],
+                     'JPT':['Japan'],
+                     'YRI':['Nigeria'],
+                     'LWK':['Kenya'],
+                     'CLM':['Columbia'],
+                     'PUR':['Puerto Rico'],
+                     'MXL':['Mexico']
+                    })
+
+region2countriesdf = DataFrame([ {'Region':x,'Country':y} 
+                                for x in region2countries 
+                                for y in region2countries[x] ])
+
 
 target_geographic_regions_me = (["Northwest Africa","Northeast Africa","Arabian Peninsula",
                                         "Syrian Desert","Turkish Peninsula","Central Asia"])
@@ -252,6 +310,16 @@ def fixRLevels( r_dataframe, column, tlevels ):
     new_r_df.colnames = robjects.StrVector(allcolumns+[column])
     return new_r_df
 # END fixRLevels
+
+# If you get that annoying AsIs round_any error you have to purge the data
+# class of the columns that need rounding. I think this allows for on the fly
+# manipulation of the values. Round any works by rounding floats to a specified
+# degree. 
+def fixRClasses( r_dataframe ):
+    for col in r_dataframe :
+        col.rclass = None
+    return r_dataframe
+# END fixRClasses
 
 ################################################################################
 # qqplot

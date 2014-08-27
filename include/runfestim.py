@@ -311,7 +311,7 @@ def plink_makefrqfile( pedfile, force=forceFlag ) :
     # --1
     if not os.path.exists( freqfile ) or force :
         command = "plink --noweb %s" \
-                " --freq --out %s" \
+                " --freq --maf 0.005 --out %s" \
                 % ( pfile, filepath+"/"+basename+".1" )
         # --filter-controls 
         #--recode12 
@@ -564,76 +564,151 @@ def wavg(group):
     d = group['ConsangPercent']
     w = group['N']
     return (d * w).sum() / w.sum()
+# END wavg
+
+def getMarriageRateAnnot( annotcol="Continent2" ):
+    print "Running getMarriageRateAnnot",annotcol
+    countryrates = read_csv("./resources/consangrates_norm.txt",sep="\t")
+    countryrates = countryrates[~countryrates.Country.isin(["Sudan","Israel"])]
+    region2countriesdf = DataFrame([ {'Region':x,'Country':y}
+                                      for x in region2countries 
+                                      for y in region2countries[x] ])
+
+    regionmerge = merge(countryrates, region2countriesdf, on="Country")
+    if annotcol == "ethnicity" :
+        hgdp = read_csv("resources/HGDP_ethnicgroups.txt",sep="\t")
+        ethnicities = merge(hgdp, countryrates, on="Country",how="left")
+        s = countryrates.groupby("ethnicity",as_index=False).apply(wavg)
+        s.rename(columns={'ethnicity':annotcol,0:'ConsangPercent'}, inplace=True)
+    elif annotcol == "country" or annotcol == "Origin" :
+        s = countryrates[['Country','ConsangPercent']]
+        s.rename(columns={'Country':annotcol}, inplace=True)
+    elif annotcol == "Continent2" :
+        subset = regionmerge[regionmerge.Region.isin( [x.replace("."," ") 
+                                                       for x in target_continents] )] 
+        s = subset.groupby("Region",as_index=True).apply(wavg).reset_index()
+        s.rename(columns={'Region':annotcol,0:'ConsangPercent'}, inplace=True)
+    elif annotcol == "Continent" :
+        s = countryrates.groupby("Continent",as_index=True).apply(wavg).reset_index()
+        s.rename(columns={'Continent':annotcol,0:'ConsangPercent'}, inplace=True)
+    elif annotcol == "GeographicRegions" :
+        subset = regionmerge[regionmerge.Region.isin( [x.replace("."," ") 
+                                                       for x in target_geographic_regions] )] 
+        s = subset.groupby("Region",as_index=True).apply(wavg).reset_index()
+        s.rename(columns={'Region':annotcol,0:'ConsangPercent'}, inplace=True)
+    elif annotcol == "GeographicRegions2" :
+        subset = regionmerge[regionmerge.Region.isin( [x.replace("."," ") 
+                                                       for x in target_geographic_regions2] )] 
+        s = subset.groupby("Region",as_index=True).apply(wavg).reset_index()
+        s.rename(columns={'Region':annotcol,0:'ConsangPercent'}, inplace=True)
+    else :
+        print "Error: Unknown annotation column:", annotcol
+        sys.exit(1)
+    
+    print s.head()
+    s.sort('ConsangPercent', inplace=True)
+    return s
+    #countryrates = merge(hgdp[["Continent","Country"]].drop_duplicates(),consangrates,on="Country",how="left")
+    #countryrates.to_csv("countryrates.tsv",sep="\t",index=False)
+
+    #print countryrates.head(3)
+    #s = countryrates.groupby("Continent",as_index=False).apply(wavg)
+    #regionrates = countryrates.groupby("Continent",as_index=False).mean()
+    #regionrates.index = regionrates.Continent
+    #regionrates.update(DataFrame(s,columns=["ConsangPercent"]))
+    #print regionrates.head(3)
+    #regionrates = regionrates[regionrates["ConsangPercent"].notnull()].sort("ConsangPercent")
+    #countryrates.rename(columns={'ConsangPercent':'CountryConsangPercent'}, inplace=True)
+    #regionrates.rename(columns={'ConsangPercent':'ContConsangPercent'}, inplace=True)
+# END getMarriageRateAnnot
 
 ################################################################################
 # ibcCountryCorrelation
 ################################################################################
-def ibcCountryCorrelation( ibcdata, basename ):
+def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Continent" ):
     print "Running ibcCountryCorrelation:",basename
 
-    countryrates = read_csv("./resources/consangrates_norm.txt",sep="\t")
-    countryrates = countryrates[~countryrates.Country.isin(["Sudan","Israel"])]
-    hgdp = read_csv("resources/HGDP_ethnicgroups.txt",sep="\t")
-    ethnicities = merge(hgdp, countryrates, on="Country",how="left")
-    #countryrates = merge(hgdp[["Continent","Country"]].drop_duplicates(),consangrates,on="Country",how="left")
-    #countryrates.to_csv("countryrates.tsv",sep="\t",index=False)
-
-    print countryrates.head(3)
-    s = countryrates.groupby("Continent",as_index=False).apply(wavg)
-    regionrates = countryrates.groupby("Continent",as_index=False).mean()
-    regionrates.index = regionrates.Continent
-    regionrates.update(DataFrame(s,columns=["ConsangPercent"]))
-    print regionrates.head(3)
-    regionrates = regionrates[regionrates["ConsangPercent"].notnull()]
-    countryrates.rename(columns={'ConsangPercent':'CountryConsangPercent'}, inplace=True)
-    regionrates.rename(columns={'ConsangPercent':'ContConsangPercent'}, inplace=True)
-
-    sampleannot = read_csv( "./resources/annotation/patientannotation.ped", sep="\t" )
-    sampleannot = merge(sampleannot[["Individual.ID","continent","Origin","ethnicity"]], hgdp[["Ethnicity","Continent","Country"]], left_on="ethnicity",right_on="Ethnicity",how="left")
+    #sampleannot = read_csv( "./resources/annotation/patientannotation.ped", sep="\t" )
+    #sampleannot = merge(sampleannot[["Individual.ID","continent","Origin","ethnicity"]], hgdp[["Ethnicity","Continent","Country"]], left_on="ethnicity",right_on="Ethnicity",how="left")
 
     #print plinkibcdata.head(3)
     #plinkibcdata.columns = ["blank","Family","Individual.ID","Homozygotes","Expected","Nonmissing","F"]
     print ibcdata.shape
-    ibcall = merge(ibcdata[["Individual.ID","F"]],sampleannot[["Individual.ID","Continent","Origin","ethnicity"]],how="left",on="Individual.ID")
+    #ibcall = merge(ibcdata[["Individual.ID","F"]],sampleannot[["Individual.ID","Continent","Origin","ethnicity"]],how="left",on="Individual.ID")
+    ibcall = addSampleAnnotation(ibcdata[["Individual.ID","F"]],"Individual.ID")
 
     print ibcall.shape
-    ibcall = ibcall[ibcall["Continent"].notnull()]
+    ibcall = ibcall[(ibcall[annotcol].notnull()) & (ibcall[annotcol] != "Unknown")]
     ibcall["Type"] = "Plink"
 
-    print ibcall.shape
-    #print "IBC"
-    #print ibcall.head(10)
-    print "Region"
+    regionrates = getMarriageRateAnnot( annotcol )
+    #print "Region"
     print regionrates.head(10)
-    print "Country"
-    countrylist = countryrates.Country.unique().tolist()
-    ibclist = ibcall.Origin.unique().tolist()
-    print [x for x in ibclist if x not in countrylist]
-    withrates = merge(ibcall, regionrates, on="Continent", how="left")
-    withrates = merge(withrates, countryrates[["Country","CountryConsangPercent"]], left_on="Origin", right_on="Country", how="inner")
-    withrates.to_csv("results/ibc/%s_continent_ibcrates.txt" %basename,sep="\t",index=False)
-    print "Making continent ibcrates file"
-    print withrates.shape
-    withrates.F = withrates.F.map(float)
+    #print "Country"
+    #countrylist = countryrates.Country.unique().tolist()
+    #ibclist = ibcall.Origin.unique().tolist()
+    #print [x for x in ibclist if x not in countrylist]
+    withrates = merge(ibcall, regionrates, on=annotcol) #, how="left"
+    #withrates = withrates[(withrates["ConsangPercent"].notnull())  &
+                          #(withrates["ConsangPercent"] != "NA")]
+    #withrates = merge(withrates, countryrates[["Country","CountryConsangPercent"]], left_on="Origin", right_on="Country", how="inner")
+    withrates.to_csv("results/ibc/%s_%s_%s_ibcrates.txt" %(basename,algorithm,annotcol),
+                     sep="\t",index=False)
+    #print "Making continent ibcrates file"
+    #print withrates.shape
+    withrates.F = withrates.F.astype(float)
+    #withrates.ContConsangPercent = withrates.ContConsangPercent.astype(float)
 
     r_dataframe = com.convert_to_r_dataframe(withrates)
+    r_dataframe = fixRLevels( r_dataframe, annotcol, regionrates[annotcol].tolist() )
+    for col in r_dataframe:
+        col.rclass = None
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x = "factor(Continent)",y="F" ) +
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(ContConsangPercent)"),notch=True) +
-                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
-                ggplot2.ggtitle("IBC by Continent") +
+                ggplot2.aes_string(x = "factor("+annotcol+")",y="F" ) +
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="ConsangPercent"),notch=True) +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45, hjust=1,vjust=1)}) +
+                #ggplot2.ggtitle("IBC by %s"%annotcol) +
                 ggplot2.scale_y_continuous("Inbreeding Coefficient") +
+                ggplot2.scale_x_discrete("Geographic Region") +
+                ggplot2.scale_fill_continuous("Percent of\nConsanguineous\nMarriages") +
                 ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
-                #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
-    if basename is None : basename = "test"
+    #if basename is None : basename = "test"
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
-    figname = "results/figures/festim/%s_%s_percent_ibc.png" % (basename,"continent")
+    figname = "results/figures/festim/%s_%s_%s_percent_ibc.png" % (basename,algorithm,annotcol)
     print "Writing file:",figname
-    grdevices.png(figname)
+    grdevices.png(figname, width=5, height=3, units="in",res=300)
     p.plot()
     grdevices.dev_off()
 
+    minF = withrates.F.min()
+    maxF = withrates.F.max()
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string( x="F" ) +
+                ggplot2.stat_density(ggplot2.aes_string(ymax="..density..", ymin="-..density..",
+                                                        fill="ConsangPercent"),
+                                     geom="ribbon", position="identity") + #,notch=True 
+                #ggplot2.ggtitle("HWE Probability by AF") +
+                ggplot2.facet_grid(robjects.Formula('. ~ '+annotcol), scales="free") +
+                ggplot2.scale_x_continuous("Inbreeding Coefficient", 
+                                           limits=robjects.FloatVector((minF,maxF))) +
+                ggplot2.scale_y_discrete("Geographic Region") +
+                ggplot2.scale_fill_continuous("Percent of\nConsanguineous\nMarriages") +
+                ggplot2.coord_flip() +
+                ggplot2.theme(**ribbontheme))
+
+    
+    #figurename = "%s/%s_hweribbon.png" % (outdir, basename)
+    figname = "results/figures/festim/%s_%s_%s_percent_density_ibc.png" % (basename,algorithm,annotcol)
+    print "Making figure:",figname
+    grdevices.png(figname, width=7, height=3, units="in",res=300)
+    p.plot()
+    grdevices.dev_off()
+
+    return
+# END ibcCountryCorrelation
+
+def ibcCountryCorrelationold( ibcdata, basename, annotcol="Continent" ):
     if sum(ibcall.Origin.isin(countryrates.Country.tolist())) == 0 :
         print "No countries with known consang rates! Exiting"
         return
@@ -647,12 +722,16 @@ def ibcCountryCorrelation( ibcdata, basename ):
     withrates.F = withrates.F.map(float)
 
     r_dataframe = com.convert_to_r_dataframe(withrates)
+    r_dataframe = fixRLevels( r_dataframe, "Origin", countryrates.Country.tolist() )
+    for col in r_dataframe:
+        col.rclass = None
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x = "factor(Origin)",y="F" ) +
-                ggplot2.geom_boxplot(ggplot2.aes_string(fill="factor(CountryConsangPercent)"),notch=True) +
+                ggplot2.geom_boxplot(ggplot2.aes_string(fill="CountryConsangPercent"),notch=True) +
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
                 ggplot2.ggtitle("IBC by Origin") +
                 ggplot2.scale_y_continuous("Inbreeding Coefficient") +
+                ggplot2.scale_fill_continuous("Percent of\nConsanguineous\nMarriage") +
                 ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
@@ -666,7 +745,7 @@ def ibcCountryCorrelation( ibcdata, basename ):
 
     out = runCommand("cd rscripts/; ./ibcplots.R %s" %basename)
     print out
-# END ibcCountryCorrelation
+# END ibcCountryCorrelationold
 
 ################################################################################
 # plotPlinkIBCold
@@ -795,18 +874,18 @@ def calculateIBC( targetfile, rerun=False ) :
     print "Hetfile:",hetfile
     print "Festim:",ibcfestim
 
-    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
-    for factor in targetfactors :
-        plotPlinkIBC( hetfile, patientdata, factor )
-        plotIBC( ibcfestim, patientdata, factor )
-        ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
-
+    plinkibcdata = read_csv( hetfile, sep="\t" )
+    festimibcdata = read_csv( ibcfestim, sep="\t" )
     filepath, basename, suffix = getBasename( hetfile )
 
-    plinkibcdata = read_csv( hetfile, sep="\t" )
-    ibcCountryCorrelation( plinkibcdata, basename+"_plink" )
-    festimibcdata = read_csv( ibcfestim, sep="\t" )
-    ibcCountryCorrelation( festimibcdata, basename+"_festim" )
+    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    for factor in targetfactors :
+        #plotPlinkIBC( hetfile, patientdata, factor )
+        #plotIBC( ibcfestim, patientdata, factor )
+        #ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
+        ibcCountryCorrelation( plinkibcdata, basename, "plink", factor )
+        ibcCountryCorrelation( festimibcdata, basename, "festim", factor )
+
     return recodefile
 # End calculateIBC
 
@@ -849,10 +928,11 @@ def calculateIBC_all( targetfile, rerun=False ) :
     # Modify ped
     modped = modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
     bedfile = run_plink_convert(modped, force=rerun)
-    hetfile = run_plink_het( bedfile, force=rerun )
+    #hetfile = run_plink_het( bedfile, force=rerun )
     frqfile = plink_makefrqfile( modped, force=rerun )
     #hapfile = plink_runhaplotyping( modped )
     newfrq, excludebase = excludeSnps( modped, force=rerun )
+    hetfile = run_plink_het( excludebase+".ped", force=rerun )
     ibcfestim = run_festim( excludebase+".ped", force=rerun )
     hetfiles.append(hetfile)
     festimfiles.append(ibcfestim)
@@ -864,18 +944,18 @@ def calculateIBC_all( targetfile, rerun=False ) :
     print "Hetfile:",hetfile
     print "Festim:",ibcfestim
 
-    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    plinkibcdata = read_csv( hetfile, sep="\t" )
+    festimibcdata = read_csv( ibcfestim, sep="\t" )
+    filepath, basename, suffix = getBasename( hetfile )
+
+    targetfactors = ["Continent2", "country", "GeographicRegions", "GeographicRegions2"]
     for factor in targetfactors :
         plotPlinkIBC( hetfile, patientdata, factor )
         plotIBC( ibcfestim, patientdata, factor )
         ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
+        ibcCountryCorrelation( plinkibcdata, basename, "plink", factor )
+        ibcCountryCorrelation( festimibcdata, basename, "festim", factor )
 
-    filepath, basename, suffix = getBasename( hetfile )
-
-    plinkibcdata = read_csv( hetfile, sep="\t" )
-    ibcCountryCorrelation( plinkibcdata, basename+"_plink" )
-    festimibcdata = read_csv( ibcfestim, sep="\t" )
-    ibcCountryCorrelation( festimibcdata, basename+"_festim" )
     return recodefile
 # End calculateIBC_all
 
@@ -930,8 +1010,8 @@ if __name__ == "__main__" :
         plinkout = "rawdata/onekg/ibc/onekg.chimp.regions.filt.samp.samp.plink.recode12.mod.het"
         ibcCountryCorrelation( plinkout, festimout )
     elif filename is not None : 
-        calculateIBC_all( filename, rerun=optlist.has_key("-o") )
-        #calculateIBC( filename, rerun=optlist.has_key("-o") )
+        #calculateIBC_all( filename, rerun=optlist.has_key("-o") )
+        calculateIBC( filename, rerun=optlist.has_key("-o") )
 
     #plotIBC() 
     #ibcCorrelation( plinkout, festimout )
