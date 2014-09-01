@@ -498,7 +498,7 @@ def bootStrap( lofvars, homvars, tlength, targetdir, prefix ) :
                 #ggplot2.stat_smooth(method="lm", se=False)+
     figname = "%s/%s_psibootstrap2.pdf" % (targetdir,prefix)
     print "Writing file:",figname
-    grdevices.pdf(figname)
+    grdevices.pdf(figname, width=5, height=4)
     p.plot()
     grdevices.dev_off()
 # END bootStrap
@@ -620,6 +620,7 @@ if __name__ == "__main__" :
     randvariants, randgenes = randomSample( homvars, len(lofvars), "Random" )
 
     bootStrap( lofvars, homvars, len(lofvars), targetdir, prefix )
+    bootStrap( homvars, homvars, len(lofvars), targetdir, prefix+"_hom" )
 
     print "Homvars:",
     print hk.dfTable(homvars.FunctionGVS)

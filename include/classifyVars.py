@@ -119,14 +119,10 @@ def retrievePolyphenScore( scoredata ):
     else : score = '.'
     #print "Score:",score
     return score
+# END retrievePolyphenScore
 
-################################################################################
-# parseInfoColumn
-# Effect_Impact|Codon_Change|Amino_Acid_change|Gene_Name|Gene_BioType|Coding|
-# Transcript|Rank|ERRORS|WARNINGS
-################################################################################
-def parseInfoColumn( chrom, pos, infodata, key, clinvar ) :
-    info = "."
+def splitInfoColumn( chrom, pos, ref, alt, infodata ) :
+    info = ""
     scoredata = {}
     #print infodata
     for annotsection in infodata.split(";") :
@@ -151,25 +147,47 @@ def parseInfoColumn( chrom, pos, infodata, key, clinvar ) :
     if not scoredata.has_key("LOF") : scoredata["LOF"] = [""]
     if not scoredata.has_key("NMD") : scoredata["NMD"] = [""]
     scoredata = Series( scoredata  )
-    
+    if len(info) > 1 :
+        aheadlist = ["chrom","pos","ref","alt","FunctionGVS","Priority","Effect",
+                     "Codon","AA","AAlength","Gene","Vartype","Coding","Transcript",
+                     "Rank","Errors","Warnings"]
+        info = DataFrame( ([[chrom,pos,ref,alt] + re.split("[\(\)\|]",x)[:13] 
+                               for x in info.split(",") ]), 
+                            columns=aheadlist )
+
+    return scoredata, info
+# END splitInfoColumn
+ 
+################################################################################
+# parseInfoColumn
+# Effect_Impact|Codon_Change|Amino_Acid_change|Gene_Name|Gene_BioType|Coding|
+# Transcript|Rank|ERRORS|WARNINGS
+################################################################################
+def parseInfoColumn( chrom, pos, ref, alt, infodata, clinvar ) :
+    print "parseInfoColumn:",chrom,pos 
     #if infodata.find("LOF") > 0 : 
         #print infodata
         #print scoredata
     #varscore = retrievePolyphenScore(scoredata["Polyphen2_HVAR_pred"])
-    if len(info) <2 : print "Failed info:",info; return None, None, None, '.'
+    scoredata, vardata = splitInfoColumn(chrom, pos, ref, alt, infodata)
+    if len(vardata) == 0 : 
+        print "Failed info:",vardata; 
+        return DataFrame( columns=["chrom","pos","ref","alt","FunctionGVS","Gene",
+                                   "Priority","AF","Missing"])
+        #None, None, None, '.'
 
-    aheadlist = ["chrom","pos","FunctionGVS","Priority","Effect","Codon","AA","AAlength","Gene",
-                 "Vartype","Coding","Transcript","Rank","Errors","Warnings"]
     #print [re.split("[\(\)\|]",x)[:13] for x in info.split(",") ]
-    vardata = DataFrame( ([[chrom,pos] + re.split("[\(\)\|]",x)[:13] for x in info.split(",") ]), 
-                        columns=aheadlist )
     vardata = vardata[vardata.Vartype == "protein_coding"]
 
     priorities = DataFrame({"Priority":["HIGH","MODERATE","LOW","MODIFIER"],"vprior":[1,2,3,4]})
     vardata = merge(vardata,priorities,how="left",on="Priority")
-    varcounts = DataFrame({'penetrance' : 
-                           vardata.groupby(["chrom","pos","FunctionGVS","Gene","Priority","vprior"])
-                           .size()}).reset_index()
+    #varcounts = DataFrame({'penetrance' : 
+                           #vardata.groupby(["chrom","pos","FunctionGVS","Gene","Priority","vprior"])
+                           #.size()}).reset_index()
+    varcounts = (vardata.groupby(["chrom","pos","ref","alt","FunctionGVS",
+                                  "Gene","Priority","vprior"]).size().reset_index())
+
+    varcounts.rename(columns={0:'penetrance'},inplace=True)
     tokeep = varcounts[["Gene","vprior"]].groupby("Gene",as_index=False).min()
     isocounts =  varcounts[["Gene","penetrance"]].groupby("Gene",as_index=False).sum()
     isocounts.columns = ["Gene","isoforms"]
@@ -185,9 +203,11 @@ def parseInfoColumn( chrom, pos, infodata, key, clinvar ) :
     vclass = []
     for index,iso in vcounts_filt.iterrows() :
         if "Polyphen2_HVAR_pred" not in iso.index : vclass.append("0"); continue
-        vclass.append(getVarClass( chrom, pos, iso["Priority"], iso["Polyphen2_HVAR_pred"], clinvar ))
+        vclass.append(getVarClass( chrom, pos, iso["Priority"], 
+                                  iso["Polyphen2_HVAR_pred"], clinvar ))
 
     vcounts_filt["vclass"] = vclass
+    #print "Vcounts", vcounts_filt.head(1)
     return vcounts_filt
 # END parseInfoColumn
 
@@ -367,7 +387,6 @@ def plotAFDistClassDensity( distdf, figurename ) :
         #afbinned.append(afbinsub)
     #afbinned = concat( afbinned ).reset_index()
     print distdf[distdf.variable == "Africa"].head()
-    sys.exit(1)
     distdf_filt = distdf[(distdf.vclass.isin([1,2,3,4])) & (distdf.AF <.05) & (distdf.AF >.0)]
 
     print distdf_filt.groupby("variable").size().head()
@@ -389,6 +408,7 @@ def plotAFDistClassDensity( distdf, figurename ) :
     grdevices.png(figurename)
     p.plot()
     grdevices.dev_off()
+    sys.exit(1)
 # END plotAFDistClassDensity
 
 ################################################################################
@@ -408,7 +428,6 @@ def getVarClass( chrom, pos, vprior, score, clinvar ) :
     return vclass
 # END getVarClass
 
-
 def calcRegionAF( regionlist, sampregions, genotypes ) :
     regionafs = {}
     for region in regionlist :
@@ -421,6 +440,61 @@ def calcRegionAF( regionlist, sampregions, genotypes ) :
     return Series(regionafs)
 # END calcRegionAF
 
+def parseMeta( meta ):
+    if len(meta) == 0 : return "",""
+    if meta.find(",") < 0 : return "",""
+    mis,af,filt = meta.split(",")
+    mis, af = float(mis[mis.find("=")+1:]), float(af[af.find("=")+1:])
+    return af, mis
+# END parseMeta
+
+def parseEffVcf( effvcf, targetcols, smallfile=False ) :
+    vcfcols = ["CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","Meta"]
+    clinvar = parseClinVar(vfilter=5)
+    print "Finished parsing clinvar"
+    if smallfile :
+        annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
+                              names=vcfcols,header=None,low_memory=False)
+                      .dropna(how='all')
+                      .reset_index(drop=True)) #skiprows=range(4),
+
+        print "Finished annotation"
+        print annotation.head()
+
+        annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
+                               for x in annotation["CHROM"].tolist()]
+
+
+        annotation.index = ("chr"+annotation["CHROM"]+":"+
+                            annotation["POS"].map(int).map(str)+':'+
+                            annotation["REF"]+':'+annotation["ALT"])
+        annotation["AF"], annotation['Missing'] = zip(*annotation["Meta"].map(parseMeta))
+        annotation['Missing'] = [findMissing(x) for x in annotation.Meta]
+        print "Major changes made, need to modify this code"
+        sys.exit(1)
+    else :
+        #limit = 100
+        annotation = []
+        for row in csv.reader(hk.CommentStripper(gzip.open(effvcf)),delimiter="\t") :
+            chrom,pos,vid,ref,alt = row[:5]
+            newdat = parseInfoColumn( chrom, pos, ref,alt, row[7], clinvar )
+            newdat = newdat[[x for x in newdat.columns if x in targetcols]]
+            newdat["AF"],newdat["Missing"] = parseMeta(row[9])
+            #print "Newdata",newdat.head()
+            annotation.append(newdat)
+            #limit -= 1
+            #if limit == 0 : break
+
+        #annotation = DataFrame(annotation,columns=vcfcols)
+        annotation = concat(annotation).reset_index()
+        annotation["key"] = ["chr%s:%s:%s:%s" %(chrom,pos,ref,alt) 
+                            for chrom,pos,ref,alt in 
+                            annotation[["chrom","pos","ref","alt"]].values]
+
+    print annotation.head()
+    return annotation
+# END parseEffVcf
+
 ################################################################################
 # classifyVars
 ################################################################################
@@ -431,8 +505,8 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
     print "Callvcf:",callvcf
     print "Effvcf:",effvcf
 
-    clinvar = parseClinVar(vfilter=5)
-    print "Finished parsing clinvar"
+    #clinvar = parseClinVar(vfilter=5)
+    #print "Finished parsing clinvar"
 
     filepath, basename, suffix = hk.getBasename( callvcf )
     isoformfile = "%s/%s_genes.tsv" % (filepath, basename )
@@ -440,39 +514,29 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
         print "Warning: isoformfile already exists:",isoformfile
         return isoformfile
 
-    regions = dict( [[samp,cont] 
-                     for samp,cont in sampleannot[["Individual.ID","Continent2"]].values] )
+    regions = dict( [[samp,cont] for samp,cont in 
+                     sampleannot[["Individual.ID","Continent2"]].values] )
+
     sampregions = [regions[x] if x in sorted(regions) else "None" for x in filepats]
 
-    vcfcols = ["CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","Meta"]
     print "Attempting to read file",effvcf
-    annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
-                          names=vcfcols,header=None,low_memory=False)
-                  .dropna(how='all')
-                  .reset_index(drop=True)) #skiprows=range(4),
 
-    print "Finished annotation"
-    print annotation.head()
+    targetcolumns = ['chrom', u'pos','ref', 'alt', u'FunctionGVS', u'Gene', u'Priority', 
+                     u'vprior', u'penetrance', u'isoforms', 
+                     u'LOF', u'NMD', u'Polyphen2_HVAR_pred', 
+                     u'vclass', u'AF', 
+                     u'Missing', u'Africa', u'America', u'East Asia', 
+                     u'Europe', u'Middle East', u'South Asia']
+                     #u'GERP++_NR', u'GERP++_RS', u'SIFT_pred', u'Polyphen2_HDIV_pred', 
+                     #u'LRT_pred', u'MutationTaster_pred', u'Interpro_domain', 
+                     #u'Uniprot_acc',
+                     #u'1000Gp1_AF', u'1000Gp1_AFR_AF', u'1000Gp1_AMR_AF', u'1000Gp1_ASN_AF', 
+                     #u'1000Gp1_EUR_AF', u'29way_logOdds', u'ESP6500_AA_AF', u'ESP6500_EA_AF', 
 
-    annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
-                           for x in annotation["CHROM"].tolist()]
+    annotation = parseEffVcf( effvcf, targetcolumns ) 
+    
+    targetvars = annotation["key"].tolist()
 
-
-    annotation.index = ("chr"+annotation["CHROM"]+":"+
-                        annotation["POS"].map(int).map(str)+':'+
-                        annotation["REF"]+':'+annotation["ALT"])
-
-    targetcolumns = ['chrom', u'pos', u'FunctionGVS', u'Gene', u'Priority', 
-                     u'vprior', u'penetrance', u'isoforms', u'1000Gp1_AF', 
-                     u'1000Gp1_AFR_AF', u'1000Gp1_AMR_AF', u'1000Gp1_ASN_AF', 
-                     u'1000Gp1_EUR_AF', u'29way_logOdds', u'ESP6500_AA_AF', 
-                     u'ESP6500_EA_AF', u'GERP++_NR', u'GERP++_RS', 
-                     u'Interpro_domain', u'LOF', u'LRT_pred', u'MutationTaster_pred', 
-                     u'NMD', u'Polyphen2_HDIV_pred', u'Polyphen2_HVAR_pred', 
-                     u'SIFT_pred', u'vclass', u'AF', 
-                     u'Missing', u'Africa', u'America', u'East Asia', u'Europe', 
-                     u'Middle East', u'South Asia']
-                    #u'Uniprot_acc',
     #regions = parseRegionsFile()
     vartypes = {}
     varclasses = {}
@@ -485,12 +549,12 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
 
     print "Writing isoformfile", isoformfile
     iso_out = open(isoformfile, "wb")
-    #for row in csv.reader( FH, delimiter="\t" ) :
     linecount = 0
     for line in FH :
         if line[:2] == "##" or len(line) < 1:
             comments.append( line )
             continue
+
         row = line.rstrip().split("\t")
         if row[0] == "#CHROM" :
             header = row
@@ -499,32 +563,35 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
 
         linecount += 1
         chrom,pos,dbsnp,ref,mut,qual,passed = row[:7]
+        print "chrom",chrom,"pos",pos
+
         pos,dbsnp,end = (int(pos),str(dbsnp!="."),(int(pos)+max(len(ref),len(mut))))
-        if len(mut)+len(ref) > 100 : continue
+        if len(mut)+len(ref) > 100 : print "Filtering indel"; continue # Remove indels
+
         key = "chr%s:%s:%s:%s" % (chrom, pos, ref, mut )
         # retrieve var class
-        if key not in annotation.index : continue #print "Key not found!"
-        info, meta = annotation.loc[key][["INFO","Meta"]]
-        meta = meta.split(",") if meta is not np.nan else ""
-        for att in meta : 
-            if att.find("=") <= 0 : continue
-            key,value = att.split("=",1)
-            if key == "AF" : AF = float(value)
-            if key == "Missing": missingness = value
-        if AF == 1. : print "Everybody has it"; continue
+        if key not in targetvars : continue #print "Key not found!"
+        #isoformdata = annotation.ix[key]
+        isoformdata = annotation[annotation["key"] == key]
+        #print "AF:",isoformdata.AF
+        #print "Before:",isoformdata
+        print type(isoformdata)
+        #print (isoformdata["AF"] < 1.) & (isoformdata["AF"] > 0.)
+        isoformdata = isoformdata[((isoformdata["AF"] != 1.) & (isoformdata["AF"] != 0.))]
+
+        print type(isoformdata)
+        print "After:",isoformdata
+        if len(isoformdata) == 0 : print "AF filtered"; continue
 
         genotypes = [ x[:3].replace("|","/") for x in row[9:] ]
-        #isoformdata, scoredata = parseInfoColumn( info, key )
-        isoformdata = parseInfoColumn( chrom, pos, info, key, clinvar )
         regionaf = calcRegionAF( regionlist, sampregions, genotypes )
-        isoformdata["AF"] = AF
-        isoformdata["Missing"] = missingness
-        # what is going on here?
+
         for col in regionaf.index : isoformdata[col] = regionaf[col]
 
         for col in targetcolumns : 
             if col not in isoformdata.columns: isoformdata[col] = "" 
         #print isoformdata[ isoformdata.FunctionGVS == "SYNONYMOUS_CODING" ].values
+
         isoformdata.to_csv(iso_out, header=(linecount ==1), index=False, 
                            sep="\t", columns=targetcolumns)
         
@@ -542,6 +609,18 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
 
     return isoformfile
 # END classifyVars
+        #info, meta = annotation.loc[key][["INFO","Meta"]]
+    #isoformdata["AF"] = AF
+    #isoformdata["Missing"] = missingness
+    # what is going on here?
+    #isoformdata, scoredata = parseInfoColumn( info, key )
+    #isoformdata = parseInfoColumn( chrom, pos, info, clinvar )
+    #meta = meta.split(",") if meta is not np.nan else ""
+    #for att in meta : 
+        #if att.find("=") <= 0 : continue
+        #key,value = att.split("=",1)
+        #if key == "AF" : AF = float(value)
+        #if key == "Missing": missingness = value
 
 ################################################################################
 # plotClassDist
@@ -941,6 +1020,8 @@ def plotSampleCounts( samplecountsfile, outdir="./results/figures/classes", forc
                           ((scounts.Region=="Middle East") & (scounts.Source=="BROAD"))] #,"South Asia"
     elif basename.find( "variome" ) >= 0 :
         scounts_sub = scounts[scounts.Region.isin(["Europe","Africa","Middle East"])] #,"South Asia"
+    elif basename.find( "test2" ) >= 0 :
+        scounts_sub = scounts[scounts.Region.isin(["Europe","Africa","Middle East"])] #,"South Asia"
     else : 
         print "Error: Unknown basename",basename; sys.exit(1)
 
@@ -1107,6 +1188,7 @@ def plotHomozygosity( geneannotfile, regionlist, outdir) :
 # END plotHomozygosity
 
 def getLevels( annotcol, basename, samplecounts ):
+    print "Running getLevels"
 
     samplecounts.index = samplecounts.Sample
     if "Ethnicity" in samplecounts.columns : 
@@ -1147,7 +1229,9 @@ def getLevels( annotcol, basename, samplecounts ):
                                 #"Middle East","South Asia" (scounts.Source=="1KG")) |
 
     elif basename.find( "variome" ) == 0 :
-        print "nothing"
+        scounts_sub = (scounts_sub[scounts_sub.Continent2.isin(
+                                        ["Europe","Africa","Middle East"])])
+    elif basename.find( "test2" ) == 0 :
         scounts_sub = (scounts_sub[scounts_sub.Continent2.isin(
                                         ["Europe","Africa","Middle East"])])
     else : 
@@ -1175,11 +1259,11 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
     valcols = (  [x+"_het" for x in vclasses+lofclasses] 
                + [x+"_hom" for x in vclasses+lofclasses] )
 
-    print "Before annotation"
-    print samplecounts.head(10)
+    #print "Before annotation"
+    #print samplecounts.head(10)
     tlevels, scounts_annot = getLevels(annotcol, basename, samplecounts )
-    print "After annotation"
-    print samplecounts.head(10)
+    #print "After annotation"
+    #print samplecounts.head(10)
 
     #print samplecounts.head()
     #print samplecounts[annotcol].unique()
@@ -1360,7 +1444,6 @@ def plotSampleCounts2( samplecountsfile, outdir="./results/figures/classes",
     grdevices.png(figurename, width=6, height=5, units="in",res=300)
     gridextra.grid_arrange( *[phet,phom], ncol=2 )
     grdevices.dev_off()
-    sys.exit(1)
 # END plotSampleCounts2
 
 ################################################################################
@@ -1441,19 +1524,19 @@ def runClassifyWorkflow( vcffile, sampleannot, regionlist, figuredir ):
 
     geneannotfile = classifyVars( allvcffiles["scores"], cleanvcf, 
                                  sampleannot, regionlist, filepats,
-                                 "./results/classes", force=True )
+                                 "./results/classes", force=False )
     samplecounts = individualVarStats( cleanvcf, geneannotfile, 
                               sampleannot, regionlist, filepats, force=True)
-    #plotSampleCounts( samplecounts, outdir=figuredir )
-    plotSampleCounts2( samplecounts, outdir=figuredir )
+    #plotSampleCounts2( samplecounts, outdir=figuredir )
     if cleanvcf.find("meceu") >= 0 : 
         regionlist = ["Europe","Middle East"]
     elif cleanvcf.find( "1000G" ) >= 0 :
         regionlist = ["Europe", "Middle East", "Africa"]
                    
-    plotHomozygosity( geneannotfile, regionlist, outdir=figuredir )
+    #plotHomozygosity( geneannotfile, regionlist, outdir=figuredir )
     plotClassDist( geneannotfile, regionlist, outdir=figuredir )
 # END runClassifyWorkflow
+    #plotSampleCounts( samplecounts, outdir=figuredir )
 
 ################################################################################
 # Main
@@ -1479,7 +1562,7 @@ if __name__ == "__main__" :
     if dataset == "test" :
         vcffile = path+"/test/everything_set1.chr1.snp.clean.vcf.gz"
     elif dataset == "onekg" :
-        vcffile = path+"/onekg/onekg.clean.vcf.gz"
+        vcffile = path+"/onekg/main/onekg.clean.vcf.gz"
     elif dataset == "test2" :
         vcffile = path+"/test2/main/test2.clean.vcf.gz"
         #vcffile = path+"/test2/test2.clean.vcf.gz"

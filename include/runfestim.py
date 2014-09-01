@@ -165,89 +165,10 @@ def excludeSnps_old( pedfile, force=False ) :
     return newfrq, thinped
 # END excludeSnps_old
 
-    #for line in open(mapfile).readlines() :
-        #print "line:",line.rstrip()
-        #if line.find("\t") >= 0: row = line.rstrip().split("\t")
-        #else : row = line.rstrip().split(" ")
-        #chrom, vid, centimorgans, pos  = row
-        #if float(centimorgans) == 0.0 : centimorgans = "%.1f" % (float(pos) / 1000000 * 1.3)
-        ##print vid, centimorgans,chrom,pos
-        #if vid in zerofreq : continue
-        #if not evars.has_key(chrom) :  evars[chrom] = {}
-        #if not evars[chrom].has_key(centimorgans) :  evars[chrom][centimorgans] = []
-        #evars[chrom][centimorgans].append(vid)
 
-    #print "Evars len:", len(evars), [len(evars[x]) for x in evars]
-    #keepvars = []
-    #for chrom in sorted( evars ) :
-        #for cM in sorted( evars[chrom] ) :
-            #keepvars.append( evars[chrom][cM][randint(0,len(evars[chrom][cM]))-1] )
-    #print "#"*40
-    #print "keepvars length:",len(keepvars)
-    #newfrqdata = freqdata[freqdata.vid.map(str).isin(keepvars)]
-    #newfrqdata.to_csv(newfrq,sep=" ",index=False,header=False)
-    #print "Old freq data",len(freqdata)
-    #print "New freq data",len(newfrqdata)
-
-    #print freqdata.head()
-    #print newfrqdata.head()
-    # keepvars comes from evars
-    # x comes from freqdata (frequency file)
-    # We're asking are the variants in keep vars that we dont have frequencies for
-    # Vars arent vid list
-    #s = [x for x in keepvars if x not in freqdata.vid.tolist()]
-    #print freqdata.head(10)
-    #if len(s) > 0 : print "Error: additonal vids!:",s[:20]; sys.exit(1)
-
-    # Write exclude snps file
-    #print "Keepvars:",len(keepvars), keepvars[:10]
-    #OUT = open( excludefile, "wb" )
-    #for item in keepvars:
-        #OUT.write("%s\n" % item)
-    #OUT.close()
-
-    #command = "plink --noweb %s" \
-            #" --allow-no-sex" \
-            #" --extract %s" \
-            #" --recode" \
-            #" --out %s" \
-            #% ( pfile, excludefile, thinped  )
-
-    #print command
-    #out = runCommand( command )
-    #print out
-    # write new frq file
-    #OUT = open(newfrq,"wb")
-    #count = 0
-    #for row in csv.reader(open(frqfile), delimiter=" ") :
-        #if row[1] in keepvars :
-            #OUT.write(" ".join(row)+"\n")
-            #count += 1
-    #OUT.close()
-    #print "New frq:",count
-    # write new map file
-    #OUT = open(newmap,"wb")
-    #for line in open(mapfile).readlines() :
-        #if line.find("\t") >= 0: row = line.rstrip().split("\t")
-        #else : row = line.rstrip().split(" ")
-        #if row[3] == 0 :
-            #centimorgans = "%.2f" % (float(row[3]) / 1000000 * 1.3) # centimorgans
-            #row[2] = centimorgans
-        #if row[1] in keepvars :
-            #OUT.write(" ".join(row)+"\n")
-        #else :
-            #row[3] = "-"+row[3]
-            #OUT.write(" ".join(row)+"\n")
-    #OUT.close()
-
-    #runCommand( "mv %s %s" % ( newmap, mapfile) )
-    #sys.exit(1)
-    #return
-
-
-######################################################################
+################################################################################
 # plink_recode12
-######################################################################
+################################################################################
 def plink_recode12( pedfile, force=forceFlag ) :
     write2log(" - Running "+whoami(), True)
     targetdir,filename,suffix = getBasename(pedfile)
@@ -267,9 +188,9 @@ def plink_recode12( pedfile, force=forceFlag ) :
     return recodefile+".ped"
 # END plink_recode12
 
-######################################################################
+################################################################################
 # plink_runhaplotyping
-######################################################################
+################################################################################
 def plink_runhaplotyping( pedfile ) :
     write2log(" - Running "+whoami(), True)
     # Check if outfile already exists
@@ -297,9 +218,9 @@ def plink_runhaplotyping( pedfile ) :
     return hapfile
 # END plink_runhaplotyping
 
-######################################################################
+################################################################################
 # plink_makefrqfile
-######################################################################
+################################################################################
 def plink_makefrqfile( pedfile, force=forceFlag ) :
     write2log(" - Running "+whoami(), True)
     filepath,basename,suffix = getBasename(pedfile)
@@ -325,9 +246,9 @@ def plink_makefrqfile( pedfile, force=forceFlag ) :
     return freqfile
 # END plink_makefrqfile
 
-######################################################################
+################################################################################
 # plink_outliers
-######################################################################
+################################################################################
 def plink_outliers( pedfile ) :
     write2log(" - Running "+whoami(), True)
     # Run outlier analysis
@@ -345,9 +266,9 @@ def plink_outliers( pedfile ) :
     return clusterfile
 # END plink_outliers
 
-######################################################################
+################################################################################
 # run_festim
-######################################################################
+################################################################################
 def run_festim( pedfile, force=False, iterations="2000" ) :
     write2log(" - Running "+whoami(), True)
     filepath, basename, suffix = getBasename( pedfile )
@@ -382,6 +303,7 @@ def run_festim( pedfile, force=False, iterations="2000" ) :
 
 # findMid
 # Find middle occurence
+################################################################################
 def findMid(s, ch):
     allindexes= [i for i, ltr in enumerate(s) if ltr == ch]
     return allindexes[len(allindexes)/2]
@@ -652,6 +574,16 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
     #withrates = withrates[(withrates["ConsangPercent"].notnull())  &
                           #(withrates["ConsangPercent"] != "NA")]
     #withrates = merge(withrates, countryrates[["Country","CountryConsangPercent"]], left_on="Origin", right_on="Country", how="inner")
+
+    print "Testing without internal Europeans"
+    withrates = withrates[~((withrates.GeographicRegions == "Europe") & 
+                          (withrates.GeographicRegions2 == "Europe"))]
+
+    withrates = withrates[~((withrates.GeographicRegions == "Africa") & 
+                          (withrates.GeographicRegions2 == "Africa"))]
+    withrates = withrates[~((withrates.GeographicRegions == "East Asia") & 
+                          (withrates.GeographicRegions2 == "East Asia"))]
+    print "finished"
     withrates.to_csv("results/ibc/%s_%s_%s_ibcrates.txt" %(basename,algorithm,annotcol),
                      sep="\t",index=False)
     #print "Making continent ibcrates file"
@@ -659,13 +591,22 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
     withrates.F = withrates.F.astype(float)
     #withrates.ContConsangPercent = withrates.ContConsangPercent.astype(float)
 
+    colmeans = withrates.groupby(annotcol)["F"].mean().reset_index()
+    #colmeans.rename(columns={0:"Colmean"},inplace=True)
+    colmeans["Label"] = ["%.3f"%x for x in colmeans.F]
+    print colmeans.head()
     r_dataframe = com.convert_to_r_dataframe(withrates)
-    r_dataframe = fixRLevels( r_dataframe, annotcol, regionrates[annotcol].tolist() )
+    rmeans = com.convert_to_r_dataframe(colmeans)
+    r_dataframe = fixRLevels( r_dataframe, annotcol, 
+                             regionrates[annotcol].tolist() )
+    rmeans = fixRLevels( rmeans, annotcol, 
+                             regionrates[annotcol].tolist() )
     for col in r_dataframe:
         col.rclass = None
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x = "factor("+annotcol+")",y="F" ) +
                 ggplot2.geom_boxplot(ggplot2.aes_string(fill="ConsangPercent"),notch=True) +
+                ggplot2.geom_text(ggplot2.aes_string(label="Label", x="F"),y=0, size=.6, data=rmeans ) +
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45, hjust=1,vjust=1)}) +
                 #ggplot2.ggtitle("IBC by %s"%annotcol) +
                 ggplot2.scale_y_continuous("Inbreeding Coefficient") +
@@ -688,6 +629,7 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
                 ggplot2.stat_density(ggplot2.aes_string(ymax="..density..", ymin="-..density..",
                                                         fill="ConsangPercent"),
                                      geom="ribbon", position="identity") + #,notch=True 
+                ggplot2.geom_text(ggplot2.aes_string(label="Label", x="F"),y=0, size=3.5, data=rmeans ) +
                 #ggplot2.ggtitle("HWE Probability by AF") +
                 ggplot2.facet_grid(robjects.Formula('. ~ '+annotcol), scales="free") +
                 ggplot2.scale_x_continuous("Inbreeding Coefficient", 
@@ -699,9 +641,10 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
 
     
     #figurename = "%s/%s_hweribbon.png" % (outdir, basename)
-    figname = "results/figures/festim/%s_%s_%s_percent_density_ibc.png" % (basename,algorithm,annotcol)
+    figname = "results/figures/festim/%s_%s_%s_percent_density_ibc.pdf" % (basename,algorithm,annotcol)
     print "Making figure:",figname
-    grdevices.png(figname, width=7, height=3, units="in",res=300)
+    #grdevices.png(figname, width=7, height=4, units="in",res=300)
+    grdevices.pdf(figname, width=7.5, height=4)
     p.plot()
     grdevices.dev_off()
 
@@ -878,13 +821,14 @@ def calculateIBC( targetfile, rerun=False ) :
     festimibcdata = read_csv( ibcfestim, sep="\t" )
     filepath, basename, suffix = getBasename( hetfile )
 
-    targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    #targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
+    targetfactors = ["GeographicRegions"]
     for factor in targetfactors :
         #plotPlinkIBC( hetfile, patientdata, factor )
         #plotIBC( ibcfestim, patientdata, factor )
         #ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
         ibcCountryCorrelation( plinkibcdata, basename, "plink", factor )
-        ibcCountryCorrelation( festimibcdata, basename, "festim", factor )
+        #ibcCountryCorrelation( festimibcdata, basename, "festim", factor )
 
     return recodefile
 # End calculateIBC

@@ -50,7 +50,7 @@ def makeLargePalette(ncols=12) :
     set2cols = list(rcolorbrewer.brewer_pal(8,"Set2"))
     allcols = set1cols+set2cols+set3cols
     return robjects.StrVector(allcols[:ncols])
-# END makeLargePallete
+# END makeLargePalette
 
 #print robjects.r('packageVersion("ggplot2")')
 
@@ -105,11 +105,13 @@ ribbontheme = {
             #'axis.title.y':ggplot2.element_blank(),
             'panel.grid.major':ggplot2.element_blank(),
             'panel.grid.minor':ggplot2.element_blank(),
-            #'panel.margin':unit(2, "lines") # cant find unit....
-            'strip.text.x':ggplot2.element_text(size=6, colour="black",angle=45),
+            'panel.margin':grid.unit(.0, "lines"), # cant find unit....
+            'strip.text.x':ggplot2.element_text(size=6, colour="black",angle=90,hjust=0,vjust=.75),
             'strip.text.y':ggplot2.element_text(size=12, face="bold", colour="black"),
-            'strip.background':ggplot2.element_rect(colour="red", fill="white"),
+            'strip.background':ggplot2.element_blank(),
             'axis.ticks':ggplot2.element_blank()
+            #'strip.background':ggplot2.element_rect(colour="white", fill="white"),
+            #'axis.ticks':ggplot2.ggplot2.element_line(colour="black")
             }
 
 pointtheme_nolegend = {
@@ -157,6 +159,7 @@ region2countries = ({'East Asia':['China','Japan'],
                      'South East Asia':['Bangladesh','India','Lakshadweep','Sri Lanka'],
                      'Oceania':['Indonesia','Malaysia','Papua New Guinea','Philippines','Singapore'],
                      'Northeast Africa':['Egypt','Libya'],
+                     'Turkish Peninsula':['Turkey'],
                      'Northwest Africa':['Algeria','Morocco','Tunisia'],
                      'Arabian Peninsula':['Saudi Arabia','United Arab Emirates','UAE','Yemen',
                                            'Oman','Bahrain','Kuwait'],

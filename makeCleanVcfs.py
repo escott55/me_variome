@@ -165,7 +165,7 @@ def seriousCleanVcf( vcffile, keepfile, outprefix, rerun=False ):
     assert os.path.exists( cleanvcf ), out
 
     subprocess.call( ['mv',cleanvcf,scleanfile] )
-    subprocess.call( ["bgzip",scleanfile] )
+    subprocess.call( ["bgzip","-f",scleanfile] )
     subprocess.call( ["tabix","-p","vcf",scleanfile+".gz"] )
 
     return scleanfile+".gz"
@@ -213,6 +213,7 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
         if samp in autoremove : print "autoremove",samp; continue
         if samp in qcoutliers : print "qcoutlier",samp; continue # skip outliers
         OUT.write(samp+"\n")
+
     OUT.close()
     
     #cleanvcffile = pop.run_vcftools_clean( vcffile, firstkeepfile, outprefix, force=force )
@@ -283,7 +284,7 @@ def makeCleanVCF( vcffile, keepfile=None, toforce=False ) :
     # identify samples to keep 
     # remove related
     # remove outliers
-    keepfile = identifySamplesToKeep( vcffile, force=toforce ) 
+    keepfile = identifySamplesToKeep( vcffile, force=True ) 
     print "Keep file is:",keepfile
 
     #if keepfile is not None :

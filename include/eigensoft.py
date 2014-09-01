@@ -495,6 +495,7 @@ if __name__ == "__main__":
     vcffile = "./rawdata/mevariome/variome.X.vcf.gz"
     vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
 
     #bedfile = seriousClean2( vcffile, True )
@@ -509,10 +510,10 @@ if __name__ == "__main__":
 
     #annotationcolumns = ["GeographicRegions","GeographicRegions2","Country","Continent2","ethnicity","Source"]
     #annotationcolumns = ["GeographicRegions2","GRsub"]
-    annotationcolumns = ["GeographicRegions"]
+    annotationcolumns = ["GeographicRegions","GeographicRegions2"]
     for annot in annotationcolumns :
         targetdir = os.path.join(filepath,"pca/"+annot)
-        #fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
+        fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
         outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="1:2" )
         print outliers
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )

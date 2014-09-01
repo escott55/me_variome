@@ -1,5 +1,6 @@
 
 library(ggplot2, quietly=TRUE)
+library(RColorBrewer)
 
 ######################################################################
 # Theme
@@ -53,6 +54,26 @@ ng2 = theme(panel.background = element_rect(fill = "grey90",colour = "white"),
     strip.text.y = element_text(size=13,face="bold"),
     strip.text.x = element_text(size=13,face="bold")
     )
+
+hclusttheme <- theme(
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_text(color="black",size=20),
+    plot.title = element_text(face="bold", size=20,colour="black"),
+    panel.grid.minor = element_blank(),
+    legend.text = element_text(size=13),
+    legend.key = element_rect(fill = "white"),
+    legend.title = element_blank(),
+    strip.text.y = element_text(size=13,face="bold"),
+    strip.text.x = element_text(size=13,face="bold")
+    )
+    #axis.text.x = element_text(colour="black",angle=45,hjust=1,vjust=1),
+    #legend.position = "top", 
+    #legend.direction="horizontal", 
+
 
 polar_theme = theme(panel.background = element_rect(fill = "white",colour = "white"),
     panel.grid.major = element_blank(),

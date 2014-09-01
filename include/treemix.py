@@ -44,8 +44,9 @@ def plink_makefrqfile( bedfile, clusterfile, force=False ) :
                    "--within", clusterfile,
                    "--out",filepath+"/"+basename]
         print "Command:"," ".join(command)
-        out = subprocess.check_output( command )
-        ret = subprocess.call( ["gzip",frqfile] )
+        out = subprocess.check_output( command, stderr=subprocess.STDOUT )
+        assert out.find("KeyError") < 0, out
+        ret = subprocess.call( ["gzip","-f", frqfile] )
         assert ret == 0 
         assert os.path.exists( gzfrqfile )
     return gzfrqfile
@@ -139,7 +140,7 @@ def convertPlink2Treemix( bedfile, pfactor="Continent", force=False ):
     print "Running convertPlink2Treemix -",bedfile
     filepath, basename, suffix = hk.getBasename(bedfile)
     famfile = "%s/%s.fam" %(filepath,basename)
-    mapfile = "%s/%s.map" %(filepath,basename)
+    #mapfile = "%s/%s.map" %(filepath,basename)
 
     treemixfile = "%s/%s.tree.frq.gz" % (filepath,basename)
     if os.path.exists(treemixfile) and not force: 
@@ -148,7 +149,8 @@ def convertPlink2Treemix( bedfile, pfactor="Continent", force=False ):
         return treemixfile, regions
 
     clusterfile = makeClusterFile( famfile, pfactor )
-    frqfile = plink_makefrqfile( bedfile, clusterfile )
+    frqfile = plink_makefrqfile( bedfile, clusterfile, force )
+    print " ".join(["plink2treemix.py",frqfile,treemixfile,clusterfile])
     subprocess.call(["plink2treemix.py",frqfile,treemixfile,clusterfile])
 
     regions = treemixRegions( treemixfile )
@@ -181,7 +183,11 @@ def runTreeMix( treemixfile, migrationevents=0, root=None, annotcol=None, force=
     if root is not None: treemixcommand = treemixcommand+["-root",root]
     print "Treemix command"
     print " ".join(treemixcommand)
-    out = subprocess.check_output( treemixcommand, stderr=subprocess.STDOUT )
+    try :
+        out = subprocess.check_output( treemixcommand, stderr=subprocess.STDOUT )
+    except subprocess.CalledProcessError as e:
+        print e
+        sys.exit(1)
     open(treemixout,"w").writelines(out)
     return targetbase
 # END runTreeMix
@@ -234,7 +240,8 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
 def getLevels( annotcol, targetvcf ):
     print "Running getLevels"
     if annotcol == "GeographicRegions2" :
-        levels = target_geographic_regions2
+        removelev = ["Central Asia"]
+        levels = [x for x in target_geographic_regions2 if x not in removelev]
     elif annotcol == "Continent" :
         levels = target_continents
     elif annotcol == "GeographicRegions" :
@@ -290,11 +297,12 @@ if __name__ == "__main__":
     keepfile = os.path.join(filepath, filename+".keeppats")
     sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
 
-    bedfile = seriousClean( targetvcf, keepfile, rerun=False )
+    bedfile = seriousClean( targetvcf, keepfile, rerun=True )
 
-    treemixfile, regions = convertPlink2Treemix( bedfile, annotcol, force=False )
+    treemixfile, regions = convertPlink2Treemix( bedfile, annotcol, force=True )
     #print treemixfile
     print "Regions:",regions
+    print "treemix file:",treemixfile 
     
     root = None
     if "Africa" in regions : root = "Africa"

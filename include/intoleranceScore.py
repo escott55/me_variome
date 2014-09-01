@@ -161,13 +161,15 @@ def calculateRVIS( genecounts, prefix=None ):
     resid = list(rstats.rstudent(model_x))
     genecounts["StdResid"] = resid
     genecounts["Colour"] = "Innerquartile"
-    lowquantile = genecounts.StdResid.quantile(.05)
-    highquantile = genecounts.StdResid.quantile(.95)
+    lowquantile = genecounts.StdResid.quantile(.02)
+    highquantile = genecounts.StdResid.quantile(.98)
     genecounts["Colour"][genecounts.StdResid <= lowquantile] = "2% most intolerant"
     genecounts["Colour"][genecounts.StdResid >= highquantile] = "2% least intolerant"
     #print "Allcounts head:",genecounts.head(20)
     #print "Allcounts shape:",genecounts.shape
     #print genecounts[genecounts.Colour != "Innerquartile"].head(20)
+    maxx = genecounts.Xcount.max()
+    maxy = genecounts.Ycount.max()
 
     r_dataframe = com.convert_to_r_dataframe(genecounts)
     p = ggplot2.ggplot(r_dataframe) + \
@@ -176,8 +178,8 @@ def calculateRVIS( genecounts, prefix=None ):
                 ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 ggplot2.ggtitle("Determination of RVIS") + \
                 ggplot2.theme(**mytheme) + \
-                ggplot2.scale_y_continuous("Sum of all Common (MAF >.01) functional variants in a gene", limits=robjects.IntVector((0,120)))+ \
-                ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
+                ggplot2.scale_y_continuous("Sum of all Common (MAF >.01) functional variants in a gene", limits=robjects.IntVector((0,maxy)))+ \
+                ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,maxx))) + \
                 ggplot2.stat_smooth(method="lm", se=False)
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
     if prefix is None : prefix = "test"
@@ -335,14 +337,14 @@ if __name__ == "__main__" :
     #prefix = "onekg.clean"
     #prefix = "daily.clean"
     #prefix = "everything_set1.chr1.snp.clean"
-    prefix = "variome"
+    #prefix = "variome"
     
     #prefix = "rawdata/daily/daily.clean"
     #prefix = "rawdata/merged/main/merged.clean"
-    #prefix = "rawdata/mevariome/main/variome.clean"
+    prefix = "rawdata/mevariome/main/variome.clean"
     #prefix = "rawdata/mergedaly/main/meceu.clean"
-    prefix = "rawdata/daily/main/daily.clean"
-    tregion = "Europe"
+    #prefix = "rawdata/daily/main/daily.clean"
+    tregion = "Middle East"
     bigX = makeGeneCounts2( prefix, tregion, vclasses=["4","3","2","1"] )
     bigY = makeGeneCounts2( prefix, tregion, vclasses=["4","3","2"], minmaf=.01 )
 
