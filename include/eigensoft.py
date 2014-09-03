@@ -32,22 +32,22 @@ from localglobals import *
 ################################################################################
 def modifyFamFile( famfile, targetfile, annotcol="Continent" ): 
     print "Using annotation column:",annotcol
-    mapdata = read_csv(famfile, delim_whitespace=True, header=None,
+    famdata = read_csv(famfile, delim_whitespace=True, header=None,
                                names=["Fam","IID","MID","PID","Gender","AFF"]) 
-    mapdata = mapdata.fillna(0)
-    #mapdata[mapdata.MID == "nan"] = 0
-    #mapdata[mapdata.PID == "nan"] = 0
-    mapdata.index = mapdata.IID
+    famdata = famdata.fillna(0)
+    #famdata[famdata.MID == "nan"] = 0
+    #famdata[famdata.PID == "nan"] = 0
+    famdata.index = famdata.IID
     #sampleannot = sampleAnnotation()
-    mapdata[annotcol] = "Unk"
-    #mapdata.update(sampleannot)
-    mapdata = addSampleAnnotation( mapdata, update=True )
-    mapdata[annotcol] = mapdata[annotcol].apply(lambda x: 
+    famdata[annotcol] = "Unk"
+    #famdata.update(sampleannot)
+    famdata = addSampleAnnotation( famdata, update=True )
+    famdata[annotcol] = famdata[annotcol].apply(lambda x: 
                                                 x.strip().replace(' ','.'))
-    mapdata["Gender"] = mapdata.Gender.astype(int)
-    mapdata.to_csv(targetfile, sep=" ", header=False, index=False, 
+    famdata["Gender"] = famdata.Gender.astype(int)
+    famdata.to_csv(targetfile, sep=" ", header=False, index=False, 
                    columns=["Fam","IID","MID","PID","Gender",annotcol])
-    return mapdata[annotcol].unique().tolist()
+    return famdata[annotcol].unique().tolist()
 # END modifyMapFile
 
 ################################################################################
@@ -514,7 +514,7 @@ if __name__ == "__main__":
     for annot in annotationcolumns :
         targetdir = os.path.join(filepath,"pca/"+annot)
         fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
-        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="1:2" )
+        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="3:4" )
         print outliers
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )

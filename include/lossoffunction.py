@@ -546,8 +546,14 @@ def randomSample( vardf, nvars, classname="Random" ) :
     return randvariants, randgenes
 # END randomSample
 
-def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4], region="MidEastNew" ) :
+################################################################################
+def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4], 
+                region="MidEastNew", config=1 ) :
+    print "Running prepareVars"
     tcolumns = ["chrom","pos","vclass","Gene","PSI","FunctionGVS",region]
+
+    omim = read_csv("resources/omimgenes.txt", sep="\t" )
+
     varset = vardf[(vardf.vclass.isin(tvclass)) & (vardf.Priority != "MODIFIER")][tcolumns]
     #varset = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
     varset["ncarriers"] = [sum([int(y) for y in x.split(":")[1:]]) 
@@ -555,8 +561,14 @@ def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4], region=
     varset["nhomcarriers"] = [sum([int(y) for y in x.split(":")[2:]]) 
                                 for x in varset[region]]
 
-    #varset = varset[(varset.ncarriers >= 1)]
-    varset = varset[(varset.nhomcarriers > 1)]
+    if config == 1 :
+        varset = varset[(varset.ncarriers >= 1)]
+    elif config == 2 :
+        varset = varset[(varset.nhomcarriers >= 1)]
+    elif config == 3 :
+        varset = varset[(varset.nhomcarriers > 1)]
+    else :
+        print "Error: Unknown configuration number:",config; sys.exit(1)
     varset["subsetname"] = classname
 
     varset["nvars"] = 1
@@ -576,8 +588,11 @@ def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4], region=
     print "Null entrez:",sum(tmp.entrez.isnull())
     print "Not null entrez:",sum(tmp.entrez.notnull())
 
-    genesfile = os.path.join(targetdir, prefix+"_"+classname+"_genes.tsv")
-    tmp.to_csv(genesfile, sep="\t", index=False)
+    tmp_omim = (merge( tmp, omim[["Entrez","MIM","Normdis"]],
+                      left_on="entrez", right_on="Entrez", how="left"))
+
+    genesfile = os.path.join(targetdir, prefix+"_"+classname+"_config"+str(config)+"_genes.tsv")
+    tmp_omim.to_csv(genesfile, sep="\t", index=False)
 
     return varset, vargenes
 # END prepareVars
@@ -594,10 +609,13 @@ if __name__ == "__main__" :
     #varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
     varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
     #varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/me1000G.clean_genes.tsv"
+
+    currconfig = 2
+
     targetvarfile = hk.copyToSubDir( varfile, "lof" )
 
     targetdir, basename, suffix = hk.getBasename( targetvarfile )
-    prefix = basename[:basename.find("_genes")]
+    prefix = basename[:basename.find("_genes")]+"_config"+str(currconfig)
 
     psiannotatedfile = os.path.join(targetdir, prefix+"_psi.tsv")
     print "Writing file:", psiannotatedfile
@@ -610,12 +628,17 @@ if __name__ == "__main__" :
     vardf["MidEastNew"] = [varsum(x,y) for x,y in vardf[["Middle East","South Asia"]].values]
     vardf["meceu"] = [varsum(x,y) for x,y in vardf[["MidEastNew","Europe"]].values]
     
-    lofvars, lofgenes = prepareVars( vardf, targetdir, prefix, "LoF", [4], region="MidEastNew" )
+    # make gene subsets
+    lofvars, lofgenes = prepareVars( vardf, targetdir, prefix, "LoF", [4], 
+                                    region="MidEastNew", config=currconfig )
 
-    homvars, homgenes = prepareVars( vardf, targetdir, prefix, "allhom", [1,2,3,4], region="MidEastNew" )
+    homvars, homgenes = prepareVars( vardf, targetdir, prefix, "allhom", [1,2,3,4], 
+                                    region="MidEastNew", config=currconfig )
+
+    benignvars, benigngenes = prepareVars( vardf, targetdir, prefix, "benign", [1], 
+                                          region="MidEastNew", config=currconfig )
+
     plotPSIClasses( homvars, targetdir, prefix+"_hom" )
-
-    benignvars, benigngenes = prepareVars( vardf, targetdir, prefix, "benign", [1], region="MidEastNew" )
 
     randvariants, randgenes = randomSample( homvars, len(lofvars), "Random" )
 

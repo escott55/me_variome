@@ -667,11 +667,11 @@ if __name__ == "__main__":
     os.chdir("..")
 
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
-    #vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
+    vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
     #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
-    vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     print "Using Vcffile:",vcffile
 
     #maxK = 4
@@ -680,14 +680,14 @@ if __name__ == "__main__":
     #assert os.path.exists(bedfile)
     #assert is_int( maxK )
 
-    annotcol="GeographicRegions"
+    annotcol="GeographicRegions2"
 
     targetvcf = copyToSubDir( vcffile, "admixture" )
     filepath, filename, suffix = getBasename(targetvcf)
 
     # Run for all data together
-    runalldata=False
-    runpopulations=True
+    runalldata=True
+    runpopulations=False
 
     levels, sampleannot = getLevels( annotcol, targetvcf )
     if runalldata : 

@@ -259,7 +259,7 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     #print fp_annot.head()
     print "Writing filter file", afterfilterfile
     fp_annot[["filepats","Continent","Continent2","GeographicRegions2","Origin",
-              "ethnicity","Country","country"]].to_csv( 
+              "ethnicity","country"]].to_csv( 
         afterfilterfile, sep="\t", index=False )
 
     sys.exit(1)

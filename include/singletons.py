@@ -5,6 +5,9 @@
 #-------------------------------------------------------------------#
 import os, sys
 import getopt
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from scipy.stats import gaussian_kde
+
 #import gzip
 #from random import randint
 
@@ -148,10 +151,42 @@ def mergeGeneFiles( tfiles ) :
         #for region in regions :
             #print idx, region
 
+
+def calcPairwisePvalues( tdf, groupcol ) :
+    print "Running calcPairwisePvalues"
+
+    pvals = []
+    for grp, subdf in tdf.groupby([groupcol]):
+        #s = pairwise_tukeyhsd(subdf[factcol], subdf.region)
+        data1 = subdf[subdf.region == "Middle East"].AF
+        data2 = subdf[subdf.region == "Europe"].AF
+        
+        maxX = subdf.AF.max()
+        #kde = gaussian_kde( data1 )
+        #ind = np.linspace(0.,maxX,512)
+        #maxY = max(kde.evaluate(ind))
+
+        f_value, p_value = stats.f_oneway(data1, data2)
+        pvals.append( Series(data=[grp,p_value,f_value,maxX,200],
+                             index=[groupcol,"pvalue","F-value","x","y"]))
+    pvals = DataFrame(pvals)
+    pvals["Pvalue"] = ["P-value: %.3g\nF: %.2f" %(x,y) 
+                       for x,y in pvals[["pvalue","F-value"]].values]
+    print pvals.head()
+    return pvals
+# END calcPairwisePvalues
+
+def calcAF(genecounts):
+    ref,het,hom = [int(x) for x in genecounts.split(":")]
+    if ref+het+hom == 0 : return 0. #print "Err:",genecounts; 
+    return (1.*hom+het) / (1.*(ref+het+hom))
+# END calcAF
+
 ################################################################################
 # plotClassDist
 ################################################################################
 def plotClassDist( genefile, regionlist, outdir="./results/figures/singletons" ) :
+    print "Running plotClassDist",genefile
 
     if genefile.find("meceu") >= 0 :
         regionlist = ["Europe","Middle East"]
@@ -162,41 +197,79 @@ def plotClassDist( genefile, regionlist, outdir="./results/figures/singletons" )
     print "Reading file:",genefile
     genedata = read_csv(genefile, sep="\t")
     regionlist = [x for x in regionlist if x in genedata.columns]
-    afdist = genedata[["chrom","pos","FunctionGVS","vclass","AF","Polyphen2_HVAR_pred"]+regionlist]
-    figurename = "%s/%s_AFdistclasses.png" % (outdir,basename)
-    #afdist = DataFrame( afdist, columns=["chrom","pos","FunctionGVS","vclass","AF"]+regionlist )
-    keepcols = ["chrom","pos","AF","vclass"] + regionlist
-    print afdist.shape
-    afdist_filt = (afdist[keepcols]
-                   .groupby(["chrom","pos","AF"])
-                   .max().reset_index())
+    afdist = genedata[["chrom","pos","FunctionGVS","vclass"]+regionlist]
+
+    keepcols = ["chrom","pos","vclass"] + regionlist
+    afdist_filt = (afdist[keepcols].groupby(["chrom","pos"]).max().reset_index())
 
     print afdist_filt.shape
     print afdist_filt.head()
 
-    plotAFDistClass( afdist_filt, figurename )
+    #figurename = "%s/%s_AFdistclasses.png" % (outdir,basename)
+    #plotAFDistClass( afdist_filt, figurename )
 
     afdistmelt = melt(afdist_filt,id_vars=["chrom","pos","vclass"],value_vars=regionlist)
+    afdistmelt.rename(columns={"variable":"region","value":"genocounts"},inplace=True)
+    afdistmelt["AF"] = [calcAF(x) for x in afdistmelt["genocounts"] ]
+
     afdistmelt.to_csv("%s/%s_dist.tsv" %(outdir,basename), sep="\t", index=False)
 
-    figurename = "%s/%s_AFdistclasses_grp.png" % (outdir,basename)
-    plotAFDistClassGroups( afdistmelt, figurename )
-
-    figurename = "%s/%s_AFdistclasses_density.png" % (outdir,basename)
-
+    #figurename = "%s/%s_AFdistclasses_grp.png" % (outdir,basename)
+    #plotAFDistClassGroups( afdistmelt, figurename )
 
     print "Running plotAFDistClassDensity"
-    print distdf.head(30)
-    print distdf[distdf.variable == "Africa"].head()
-    distdf_filt = distdf[(distdf.vclass.isin([1,2,3,4])) & (distdf.AF <.05) & (distdf.AF >.0)]
+    print afdistmelt.head(30)
+    distdf_filt = afdistmelt[(afdistmelt.vclass.isin([1,2,3,4])) 
+                             & (afdistmelt.AF <.05) & (afdistmelt.AF >0.)]
 
-    print distdf_filt.groupby("variable").size().head()
+    distdf_filt = distdf_filt[distdf_filt.region != "Africa"]
+    pvals = calcPairwisePvalues( distdf_filt, "vclass" )
+    pvals.index = pvals.vclass
 
+    afdensity = []
+    for grp, subdf in distdf_filt.groupby(["vclass","region"]):
+        vclass,region = grp
+        maxX = subdf.AF.max()
+        kde = gaussian_kde( subdf.AF )
+        ind = np.linspace(0.,.05,1024)
+        maxY = max(kde.evaluate(ind))
+        tmpdf = DataFrame({"vclass":vclass, "region":region,
+                           "Density":kde.evaluate(ind), "AF":ind})
+        afdensity.append(tmpdf)
+
+    afdensity = concat(afdensity).reset_index(drop=True)
+
+    maxY = afdensity.groupby("vclass")["Density"].max().reset_index()
+    maxY.rename(columns={"Density":"y"},inplace=True)
+    maxY.index = maxY.vclass
+    pvals.update(maxY)
+
+    figurename = "%s/%s_AFdistclasses_density2.png" % (outdir,basename)
+    r_dataframe = com.convert_to_r_dataframe(afdensity)
+    r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x="AF", y="Density") + 
+                ggplot2.geom_line( ggplot2.aes_string(colour="factor(region)"), size=1.5 ) +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"),
+                                    hjust=1, vjust=1, data = r_pvals ) + #size=7,
+                ggplot2.ggtitle("AF Density by Variant Class") +
+                ggplot2.facet_grid( robjects.Formula('vclass ~ .'), scale="free" ) +
+                ggplot2.theme(**mytheme) )
+    print "Making figure:",figurename
+    grdevices.png(figurename)
+    p.plot()
+    grdevices.dev_off()
+
+
+    figurename = "%s/%s_AFdistclasses_density.png" % (outdir,basename)
     #hist,bin_edges=np.histogram(alldata.,bins=bins)
     r_dataframe = com.convert_to_r_dataframe(distdf_filt)
+    r_pvals = com.convert_to_r_dataframe(pvals)
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x="AF", group="factor(variable)", colour="factor(variable)") +
-                ggplot2.geom_density() +
+                ggplot2.aes_string(x="AF") + #group="factor(region)", colour="factor(region)"
+                ggplot2.geom_density( ggplot2.aes_string(colour="factor(region)") ) +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"),
+                                    hjust=1, vjust=0, data = r_pvals ) + #size=7,
                 ggplot2.ggtitle("AF Density by Variant Class") +
                 ggplot2.facet_grid( robjects.Formula('vclass ~ .'), scale="free" ) +
                 ggplot2.theme(**mytheme) )
@@ -277,8 +350,9 @@ if __name__ == "__main__" :
 
     plotClassDist( mfile, ["Middle East","Europe","Africa"] )
 
-    #for grp, row in tfiles :
-        #plotClassDist( row["genes"], ["Middle East","Europe","Africa"] )
+    for grp, row in tfiles :
+        if grp == "onekg" : continue
+        plotClassDist( row["genes"], ["Middle East","Europe"] )
        
 # END MAIN
     #dalysingletonfile = "./rawdata/daily/main/vstats/daily.clean.singletons"
