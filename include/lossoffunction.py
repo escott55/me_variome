@@ -503,6 +503,75 @@ def bootStrap( lofvars, homvars, tlength, targetdir, prefix ) :
     grdevices.dev_off()
 # END bootStrap
 
+def RVISbootStrap( lofgenes, homgenes, tlength, targetdir, prefix ) :
+    rvisgenes = read_csv("resources/rvis_data.txt", sep="\t")
+    
+    lofrvis = merge( lofgenes, rvisgenes, left_on="Gene",right_on="gene")
+    #lofrvis["Vclass"] = "LoF"
+    homrvis = merge( homgenes, rvisgenes, left_on="Gene",right_on="gene")
+    #homrvis["Vclass"] = "Random"
+    #tcols = ["Gene","RVIS","RVIS_percent","Vclass"]
+    #allrvis = concat( [lofrvis[tcols], homrvis[tcols]] ).reset_index()
+
+    samplings = []
+    ind = np.linspace(-5,5,512)
+    kde = gaussian_kde( homrvis[homrvis.RVIS.notnull()].RVIS.map(float).tolist() )
+    for boot in range(0,1000) :
+        kdesub = gaussian_kde( kde.resample(tlength) )
+        kdedf = DataFrame( {"subsetname":"Random%d" % boot, 
+                          "Density":kdesub.evaluate(ind), "RVIS":ind} )
+        samplings.append( kdedf )
+
+    samplings = concat( samplings ).reset_index(drop=True)
+
+    quants = samplings.groupby(["RVIS"])["Density"].quantile([.025,.5,.975]).reset_index()
+    quants.rename(columns={'level_1':"Quantile",0:"Density"}, inplace=True )
+    quants["linetype"] = ["Mean" if x == .5 else "95% threshold" for x in quants.Quantile]
+
+    if "vclass" not in lofrvis.columns.tolist() : 
+        lofrvis["vclass"] = "LoF"
+
+    lofrvis_sub = lofrvis[lofrvis.RVIS.notnull()].copy()
+    lofrvis_sub.RVIS = lofrvis_sub.RVIS.astype(float)
+    lofdf = []
+    for vclass,lofclass in lofrvis_sub.groupby("vclass") :
+        kde = gaussian_kde( lofrvis_sub[lofrvis_sub.vclass == vclass].RVIS.tolist() )
+        tmpdf = DataFrame({"vclass":vclass, "Density":kde.evaluate(ind), "RVIS":ind})
+        lofdf.append( tmpdf )
+
+    lofdf = concat( lofdf ).reset_index(drop=True)
+
+    rsamplings = com.convert_to_r_dataframe(samplings)
+    rlofgenes = com.convert_to_r_dataframe(lofdf)
+    rquants = com.convert_to_r_dataframe(quants)
+    rquants = fixRLevels( rquants,"linetype", ["Mean","95% threshold"] )
+    #r_pvals = com.convert_to_r_dataframe(pvals)
+    p = (ggplot2.ggplot(rlofgenes) +
+                ggplot2.aes_string(x="RVIS",y="Density") + #,group="vclass"
+                ggplot2.geom_line( ggplot2.aes_string(x="RVIS", y="Density", group="factor(subsetname)"),
+                                  color="grey", data=rsamplings ) +
+                ggplot2.geom_line( ggplot2.aes_string(x="RVIS",y="Density",linetype="factor(linetype)", 
+                                                      group="factor(Quantile)"),
+                                  color="black", data=rquants ) +
+                ggplot2.geom_line( ggplot2.aes_string(color="factor(vclass)") ) +
+                #ggplot2.geom_density(ggplot2.aes_string(colour="factor(vclass)"),size=1.5,color="blue") +
+                ggplot2.scale_y_continuous("Density") +
+                #ggplot2.scale_x_continuous("RVIS") +
+                ggplot2.scale_linetype("Confidence Interval") +
+                ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
+                #ggplot2.theme(**{'legend.position':"none"}) +
+                #ggplot2.ggtitle("RVIS distribution") +
+                #ggplot2.scale_colour_brewer("Variant Type",palette="Set1") +
+                #ggplot2.scale_x_discrete("ME AF") +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.stat_smooth(method="lm", se=False)+
+    figname = "%s/%s_rvisbootstrap.pdf" % (targetdir,prefix)
+    print "Writing file:",figname
+    grdevices.pdf(figname, width=5, height=4)
+    p.plot()
+    grdevices.dev_off()
+# END RVISbootStrap
+
 def bootStrap2( homvars, tlength, targetdir, prefix ):
     bootvars = []
     for boot in range(0,100) :
@@ -532,7 +601,7 @@ def bootStrap2( homvars, tlength, targetdir, prefix ):
     grdevices.pdf(figname)
     p.plot()
     grdevices.dev_off()
-# END bootStrap
+# END bootStrap2
 
 def randomSample( vardf, nvars, classname="Random" ) :
     randrows = random.sample(homvars.index, nvars)
@@ -553,6 +622,7 @@ def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4],
     tcolumns = ["chrom","pos","vclass","Gene","PSI","FunctionGVS",region]
 
     omim = read_csv("resources/omimgenes.txt", sep="\t" )
+    omim["MIM"] = [str(int(x)) for x in omim.MIM]
 
     varset = vardf[(vardf.vclass.isin(tvclass)) & (vardf.Priority != "MODIFIER")][tcolumns]
     #varset = vardf[(vardf.LOF.notnull()) & (vardf.Priority != "MODIFIER")]
@@ -575,23 +645,25 @@ def prepareVars( vardf, targetdir, prefix, classname="LoF", tvclass=[4],
     vargenes = varset[["Gene","nvars","nhomcarriers"]].groupby("Gene").sum().reset_index()
 
     # Write out genes to file
-    refseqgenes = read_csv("resources/sqlgenes.txt",sep="\t")
-    refseqgenes["Gene"] = [x.strip() for x in refseqgenes.geneSymbol]
+    #refseqgenes = read_csv("resources/sqlgenes.txt",sep="\t")
+    refseqgenes = read_csv("resources/human_genes.txt",sep="\t")
+    refseqgenes["Gene"] = [x.strip() for x in refseqgenes.Gene.map(str)]
+    refseqgenes["Entrez"] = [str(int(x)) for x in refseqgenes.GeneID]
     print refseqgenes.head()
     #tmp = merge(lofgenes, refseqgenes[["geneSymbol","entrez"]], left_on="Gene",
                 #right_on="entrez", how="left")
 
-    tmp = (merge(vargenes, refseqgenes[["Gene","entrez"]], 
+    tmp = (merge(vargenes, refseqgenes[["Gene","Entrez"]], 
                  on="Gene", how="left").drop_duplicates()
            .sort(["nvars","nhomcarriers"], ascending=[False,False]))
-    print tmp[tmp.entrez.isnull()].head(20)
-    print "Null entrez:",sum(tmp.entrez.isnull())
-    print "Not null entrez:",sum(tmp.entrez.notnull())
+    print tmp[tmp.Entrez.isnull()].head(20)
+    print "Null entrez:",sum(tmp.Entrez.isnull())
+    print "Not null entrez:",sum(tmp.Entrez.notnull())
 
     tmp_omim = (merge( tmp, omim[["Entrez","MIM","Normdis"]],
-                      left_on="entrez", right_on="Entrez", how="left"))
+                      on="Entrez", how="left"))
 
-    genesfile = os.path.join(targetdir, prefix+"_"+classname+"_config"+str(config)+"_genes.tsv")
+    genesfile = os.path.join(targetdir, prefix+"_"+classname+"_genes.tsv")
     tmp_omim.to_csv(genesfile, sep="\t", index=False)
 
     return varset, vargenes
@@ -607,10 +679,10 @@ if __name__ == "__main__" :
     # Make X
     #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
     #varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
-    varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
-    #varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/me1000G.clean_genes.tsv"
+    #varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
+    varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/classify/me1000G.clean.sfilt_genes.tsv"
 
-    currconfig = 2
+    currconfig = 3
 
     targetvarfile = hk.copyToSubDir( varfile, "lof" )
 
@@ -625,25 +697,27 @@ if __name__ == "__main__" :
     #print vardf.head(10)
     plotPSIClasses( vardf, targetdir, prefix )
 
-    vardf["MidEastNew"] = [varsum(x,y) for x,y in vardf[["Middle East","South Asia"]].values]
-    vardf["meceu"] = [varsum(x,y) for x,y in vardf[["MidEastNew","Europe"]].values]
+    #vardf["MidEastNew"] = [varsum(x,y) for x,y in vardf[["Middle East","South Asia"]].values]
+    #vardf["meceu"] = [varsum(x,y) for x,y in vardf[["MidEastNew","Europe"]].values]
     
     # make gene subsets
     lofvars, lofgenes = prepareVars( vardf, targetdir, prefix, "LoF", [4], 
-                                    region="MidEastNew", config=currconfig )
+                                    region="Middle East", config=currconfig )
 
     homvars, homgenes = prepareVars( vardf, targetdir, prefix, "allhom", [1,2,3,4], 
-                                    region="MidEastNew", config=currconfig )
+                                    region="Middle East", config=currconfig )
 
     benignvars, benigngenes = prepareVars( vardf, targetdir, prefix, "benign", [1], 
-                                          region="MidEastNew", config=currconfig )
+                                          region="Middle East", config=currconfig )
 
     plotPSIClasses( homvars, targetdir, prefix+"_hom" )
 
     randvariants, randgenes = randomSample( homvars, len(lofvars), "Random" )
 
+    RVISbootStrap( lofgenes, homgenes, len(lofvars), targetdir, prefix )
+
     bootStrap( lofvars, homvars, len(lofvars), targetdir, prefix )
-    bootStrap( homvars, homvars, len(lofvars), targetdir, prefix+"_hom" )
+    #bootStrap( homvars, homvars, len(lofvars), targetdir, prefix+"_hom" )
 
     print "Homvars:",
     print hk.dfTable(homvars.FunctionGVS)
@@ -661,6 +735,7 @@ if __name__ == "__main__" :
 
     # Intersect with RVIS
     #rvisAnalysis( lofgenes, randgenes, targetdir, prefix )
+
   
     mouselofgenes = mouseAnalysis( lofgenes )
     #mouserandgenes = mouseAnalysis( randgenes )
@@ -681,19 +756,20 @@ if __name__ == "__main__" :
     plotPSIByClass(allpsi, targetdir, prefix+"_mouse")
 
 
-    # plot Fly
-    tcols = ["Gene","PSI","Lethal"]
-    lofmerge = merge( lofvars[["Gene","PSI"]], mouselofgenes[["Gene","lethal"]], on="Gene" )
-    lofmerge["Lethal"] = ["Mouse lethal" if x == "Lethal" else "Mouse non-lethal" 
-                          for x in lofmerge.lethal]
-    lofmerge["vclass"] = lofmerge["Lethal"]
-    bootStrap( lofmerge, homvars, len(lofmerge), targetdir, prefix+"_lethal" )
-    print lofmerge.shape
-    randvariants["Lethal"] = "Random Set"
-    allpsi = concat( [lofmerge[tcols], randvariants[tcols]] ).drop_duplicates().reset_index()
-    allpsi.rename(columns={'Lethal':'vclass'}, inplace=True)
-    print allpsi.head()
-    plotPSIByClass(allpsi, targetdir, prefix)
+
+    ## plot Fly
+    #tcols = ["Gene","PSI","Lethal"]
+    #lofmerge = merge( lofvars[["Gene","PSI"]], mouselofgenes[["Gene","lethal"]], on="Gene" )
+    #lofmerge["Lethal"] = ["Mouse lethal" if x == "Lethal" else "Mouse non-lethal" 
+                          #for x in lofmerge.lethal]
+    #lofmerge["vclass"] = lofmerge["Lethal"]
+    #bootStrap( lofmerge, homvars, len(lofmerge), targetdir, prefix+"_lethal" )
+    #print lofmerge.shape
+    #randvariants["Lethal"] = "Random Set"
+    #allpsi = concat( [lofmerge[tcols], randvariants[tcols]] ).drop_duplicates().reset_index()
+    #allpsi.rename(columns={'Lethal':'vclass'}, inplace=True)
+    #print allpsi.head()
+    #plotPSIByClass(allpsi, targetdir, prefix)
 
     sys.exit(1)
 # END MAIN

@@ -431,7 +431,7 @@ def getVarClass( chrom, pos, vprior, score, clinvar ) :
 def calcRegionAF( regionlist, sampregions, genotypes ) :
     regionafs = {}
     for region in regionlist :
-        print region, str(region)
+        #print region, str(region)
         if str(region) == "nan" : continue
         subgeno = [ genotypes[i] for i in range(len(genotypes)) if sampregions[i] == region ]
         regionafs[region]= "%d:%d:%d" %(subgeno.count('0/0'),
@@ -448,59 +448,93 @@ def parseMeta( meta ):
     return af, mis
 # END parseMeta
 
-def parseEffVcf( effvcf, targetcols, smallfile=False ) :
+def parseEffVcf( effvcf, targetcols, force=False ) :
+    print "Attempting to read file",effvcf
+
+    filepath,basename,suffix = hk.getBasename( effvcf )
     vcfcols = ["CHROM","POS","ID","REF","ALT","QUAL","FILTER","INFO","FORMAT","Meta"]
     clinvar = parseClinVar(vfilter=5)
     print "Finished parsing clinvar"
-    if smallfile :
-        annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
-                              names=vcfcols,header=None,low_memory=False)
-                      .dropna(how='all')
-                      .reset_index(drop=True)) #skiprows=range(4),
 
-        print "Finished annotation"
-        print annotation.head()
+    limit = 100
 
-        annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
-                               for x in annotation["CHROM"].tolist()]
+    chromfiles = {}
+    for chrom in range(1,23)+["X"] : 
+        finishedchromfile = os.path.join(filepath,basename+"_chr%s.tsv"%chrom)
+        if os.path.exists(finishedchromfile) and not force :
+            chromfiles[str(chrom)] = finishedchromfile
+    if len(chromfiles) == 23 : 
+        print "All files accounted for:", chromfiles
+        return chromfiles
 
+    annotation = []
+    currchrom = 0
+    for row in csv.reader(hk.CommentStripper(gzip.open(effvcf)),delimiter="\t") :
+        chrom,pos,vid,ref,alt = [x.strip() for x in row[:5]]
+        if currchrom != chrom and chromfiles.has_key(currchrom): 
+            print "Finished chrom:",currchrom,"new",chrom,":","Nvars:",len(annotation)
+            tfile = chromfiles[currchrom]
+            annotation = concat(annotation).reset_index(drop=True)
+            #print "Nisoforms:",len(annotation)
+            annotation["key"] = ["chr%s:%s:%s:%s" %tuple(keylst) 
+                                for keylst in 
+                                annotation[["chrom","pos","ref","alt"]].values]
+            annotation.to_csv(tfile,sep="\t",index=False)
+            annotation = []
 
-        annotation.index = ("chr"+annotation["CHROM"]+":"+
-                            annotation["POS"].map(int).map(str)+':'+
-                            annotation["REF"]+':'+annotation["ALT"])
-        annotation["AF"], annotation['Missing'] = zip(*annotation["Meta"].map(parseMeta))
-        annotation['Missing'] = [findMissing(x) for x in annotation.Meta]
-        print "Major changes made, need to modify this code"
-        sys.exit(1)
-    else :
-        #limit = 100
-        annotation = []
-        for row in csv.reader(hk.CommentStripper(gzip.open(effvcf)),delimiter="\t") :
-            chrom,pos,vid,ref,alt = row[:5]
-            newdat = parseInfoColumn( chrom, pos, ref,alt, row[7], clinvar )
-            newdat = newdat[[x for x in newdat.columns if x in targetcols]]
-            newdat["AF"],newdat["Missing"] = parseMeta(row[9])
-            #print "Newdata",newdat.head()
-            annotation.append(newdat)
-            #limit -= 1
-            #if limit == 0 : break
+        if currchrom != chrom :
+            print "New Chrom:",chrom
+            finishedchromfile = os.path.join(filepath,basename+"_chr%s.tsv"%chrom)
+            chromfiles[chrom] = finishedchromfile
+            currchrom = chrom
 
-        #annotation = DataFrame(annotation,columns=vcfcols)
-        annotation = concat(annotation).reset_index()
-        annotation["key"] = ["chr%s:%s:%s:%s" %(chrom,pos,ref,alt) 
-                            for chrom,pos,ref,alt in 
-                            annotation[["chrom","pos","ref","alt"]].values]
+        #if len( annotation ) > limit : continue
+        newdat = parseInfoColumn( chrom, pos, ref,alt, row[7], clinvar )
+        newdat = newdat[[x for x in newdat.columns if x in targetcols]]
+        newdat["AF"],newdat["Missing"] = parseMeta(row[9])
+        #print "Newdata",newdat.head()
+        annotation.append(newdat)
 
-    print annotation.head()
-    return annotation
+    tfile = chromfiles[currchrom]
+    annotation = concat(annotation).reset_index(drop=True)
+    #print "Nisoforms:",len(annotation)
+    annotation["key"] = ["chr%s:%s:%s:%s" %tuple(keylst) 
+                        for keylst in 
+                        annotation[["chrom","pos","ref","alt"]].values]
+    annotation.to_csv(tfile,sep="\t",index=False)
+    annotation = []
+
+    #annotation = DataFrame(annotation,columns=vcfcols)
+    return chromfiles
 # END parseEffVcf
+    #if smallfile :
+        #annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
+                              #names=vcfcols,header=None,low_memory=False)
+                      #.dropna(how='all')
+                      #.reset_index(drop=True)) #skiprows=range(4),
+
+        #print "Finished annotation"
+        #print annotation.head()
+
+        #annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
+                               #for x in annotation["CHROM"].tolist()]
+
+
+        #annotation.index = ("chr"+annotation["CHROM"]+":"+
+                            #annotation["POS"].map(int).map(str)+':'+
+                            #annotation["REF"]+':'+annotation["ALT"])
+        #annotation["AF"], annotation['Missing'] = zip(*annotation["Meta"].map(parseMeta))
+        #annotation['Missing'] = [findMissing(x) for x in annotation.Meta]
+        #print "Major changes made, need to modify this code"
+        #sys.exit(1)
+    #else :
 
 ################################################################################
 # classifyVars
 ################################################################################
 def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats, 
                  outdir="./classes", limit=-1, force=False ) :
-    hk.write2log("#"*70+"\n# Running "+hk.whoami()+"\n"+"#"*70, True )
+    print "#"*70+"\n# Running "+hk.whoami()+"\n"+"#"*70
 
     print "Callvcf:",callvcf
     print "Effvcf:",effvcf
@@ -510,6 +544,8 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
 
     filepath, basename, suffix = hk.getBasename( callvcf )
     isoformfile = "%s/%s_genes.tsv" % (filepath, basename )
+
+    # If final file already exists, return
     if os.path.exists(isoformfile) and not force: 
         print "Warning: isoformfile already exists:",isoformfile
         return isoformfile
@@ -517,25 +553,21 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
     regions = dict( [[samp,cont] for samp,cont in 
                      sampleannot[["Individual.ID","Continent2"]].values] )
 
-    sampregions = [regions[x] if x in sorted(regions) else "None" for x in filepats]
+    sampregions = [regions[x] if regions.has_key(x) else "None" for x in filepats]
 
-    print "Attempting to read file",effvcf
 
-    targetcolumns = ['chrom', u'pos','ref', 'alt', u'FunctionGVS', u'Gene', u'Priority', 
-                     u'vprior', u'penetrance', u'isoforms', 
-                     u'LOF', u'NMD', u'Polyphen2_HVAR_pred', 
-                     u'vclass', u'AF', 
-                     u'Missing', u'Africa', u'America', u'East Asia', 
-                     u'Europe', u'Middle East', u'South Asia']
+    targetcolumns = ['chrom','pos','ref','alt','FunctionGVS','Gene','Priority', 
+                     'vprior','penetrance','isoforms','LOF','NMD','Polyphen2_HVAR_pred', 
+                     'vclass','AF','Missing'] + regionlist
+                     #,'Africa','America','East Asia', 'Europe','Middle East'
                      #u'GERP++_NR', u'GERP++_RS', u'SIFT_pred', u'Polyphen2_HDIV_pred', 
                      #u'LRT_pred', u'MutationTaster_pred', u'Interpro_domain', 
                      #u'Uniprot_acc',
                      #u'1000Gp1_AF', u'1000Gp1_AFR_AF', u'1000Gp1_AMR_AF', u'1000Gp1_ASN_AF', 
                      #u'1000Gp1_EUR_AF', u'29way_logOdds', u'ESP6500_AA_AF', u'ESP6500_EA_AF', 
 
-    annotation = parseEffVcf( effvcf, targetcolumns ) 
-    
-    targetvars = annotation["key"].tolist()
+    chromfiles = parseEffVcf( effvcf, targetcolumns ) 
+    openannotation = 0  
 
     #regions = parseRegionsFile()
     vartypes = {}
@@ -561,9 +593,14 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
             samples = [x.strip() for x in row[9:]]
             continue
 
-        linecount += 1
         chrom,pos,dbsnp,ref,mut,qual,passed = row[:7]
-        print "chrom",chrom,"pos",pos
+        #print "chrom",chrom,"pos",pos
+
+        if openannotation != chrom : 
+            print "Opening new annot file: chr",chrom
+            annotation = read_csv( chromfiles[chrom], sep="\t", low_memory=False )
+            targetvars = annotation["key"].tolist()
+            openannotation = chrom
 
         pos,dbsnp,end = (int(pos),str(dbsnp!="."),(int(pos)+max(len(ref),len(mut))))
         if len(mut)+len(ref) > 100 : print "Filtering indel"; continue # Remove indels
@@ -573,14 +610,11 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
         if key not in targetvars : continue #print "Key not found!"
         #isoformdata = annotation.ix[key]
         isoformdata = annotation[annotation["key"] == key]
-        #print "AF:",isoformdata.AF
         #print "Before:",isoformdata
-        print type(isoformdata)
-        #print (isoformdata["AF"] < 1.) & (isoformdata["AF"] > 0.)
+        #print type(isoformdata)
         isoformdata = isoformdata[((isoformdata["AF"] != 1.) & (isoformdata["AF"] != 0.))]
 
-        print type(isoformdata)
-        print "After:",isoformdata
+        #print "After:",isoformdata
         if len(isoformdata) == 0 : print "AF filtered"; continue
 
         genotypes = [ x[:3].replace("|","/") for x in row[9:] ]
@@ -592,6 +626,7 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
             if col not in isoformdata.columns: isoformdata[col] = "" 
         #print isoformdata[ isoformdata.FunctionGVS == "SYNONYMOUS_CODING" ].values
 
+        linecount += 1
         isoformdata.to_csv(iso_out, header=(linecount ==1), index=False, 
                            sep="\t", columns=targetcolumns)
         
@@ -1388,14 +1423,15 @@ def runClassifyWorkflow( vcffile, sampleannot, regionlist, figuredir ):
 
     geneannotfile = classifyVars( allvcffiles["scores"], cleanvcf, 
                                  sampleannot, regionlist, filepats,
-                                 "./results/classes", force=False )
+                                 "./results/classes", force=True )
+    
     samplecounts = individualVarStats( cleanvcf, geneannotfile, 
                               sampleannot, regionlist, filepats, force=True)
     #plotSampleCounts2( samplecounts, outdir=figuredir )
-    if cleanvcf.find("meceu") >= 0 : 
-        regionlist = ["Europe","Middle East"]
-    elif cleanvcf.find( "1000G" ) >= 0 :
-        regionlist = ["Europe", "Middle East", "Africa"]
+    #if cleanvcf.find("meceu") >= 0 : 
+        #regionlist = ["Europe","Middle East"]
+    #elif cleanvcf.find( "1000G" ) >= 0 :
+        #regionlist = ["Europe", "Middle East", "Africa"]
                    
     #plotHomozygosity( geneannotfile, regionlist, outdir=figuredir )
     plotClassDist( geneannotfile, regionlist, outdir=figuredir )
@@ -1427,25 +1463,23 @@ if __name__ == "__main__" :
         vcffile = path+"/test/everything_set1.chr1.snp.clean.vcf.gz"
     elif dataset == "onekg" :
         vcffile = path+"/onekg/main/onekg.clean.vcf.gz"
+        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
     elif dataset == "test2" :
         vcffile = path+"/test2/main/test2.clean.vcf.gz"
         #vcffile = path+"/test2/test2.clean.vcf.gz"
     elif dataset == "daily" :
-        vcffile = path+"/daily/daily.clean.vcf.gz"
+        vcffile = path+"/daily/main/daily.clean.vcf.gz"
+        clustfile = "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean.annot"
     elif dataset == "merge1kg" :
         vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
+        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
     elif dataset == "mevariome" :
         vcffile = path+"/mevariome/variome.vcf.gz"
+        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
         #vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
-    #elif dataset == "variome1" :
-        #vcffile = path+"/variome1/variome.clean.vcf.gz"
-        #vcffile = path+"/variome1/variome.vcf.gz"
-    #elif dataset == "variome" :
-        #vcffile = path+"/variome/variome.clean.vcf.gz"
-        #vcffile = path+"/variome1/variome.vcf.gz"
     elif dataset == "mergedaly" :
-        #vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"
-        vcffile = path+"/mergedaly/meceu.vcf.gz"
+        vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"
+        #vcffile = path+"/mergedaly/meceu.vcf.gz"
     elif dataset == "casanova" :
         vcffile = path+"/casanova/casanova.snp.recal.clean.vcf.gz"
     #elif dataset == "CEU" :
@@ -1458,7 +1492,24 @@ if __name__ == "__main__" :
         sys.exit(1)
 
     filepats = patientInfo.currentFilePats( vcffile )
-    sampleannot = sampleAnnotation( filepats )
+    if os.path.exists(clustfile) :
+        sampleannot = read_csv( clustfile, sep="\t" )
+        sampleannot.index = sampleannot["Individual.ID"]
+        sampleannot = sampleannot.ix[filepats,:]
+        mapping_regions = {"NWA":"Middle East", "NEA":"Middle East", "AP":"Middle East",
+                           "SD":"Middle East", "TP":"Middle East", "CA":"Middle East",
+                           "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe", 
+                           "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
+                           "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
+                           "Anglo-American":"Anglo-American"
+                          }
+        sampleannot["Continent2"] = [mapping_regions[x] if mapping_regions.has_key(x)
+                                      else "Unknown"
+                                      for x in sampleannot.GeographicRegions3]
+    else :
+        sampleannot = sampleAnnotation( filepats )
+
+    print sampleannot.head()
     regionlist = sorted(sampleannot[sampleannot.Continent2.notnull()]
                         .Continent2.unique().tolist())
 

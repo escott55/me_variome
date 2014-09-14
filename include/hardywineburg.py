@@ -97,10 +97,11 @@ def hwTernaryPlot( targetdf, targetdir, prefix, vmax=10000 ):
     #if len(targetdf) > vmax :
         #targetdf[["AA","AB","BB"]].head(vmax).to_csv(tmpfile, index=False)
     #else :
-    targetdf[["AA","AB","BB"]].to_csv(tmpfile, index=False)
+    targetdf[["AA","AB","BB"]].drop_duplicates().to_csv(tmpfile, index=False)
 
     rcmd = ("library(HardyWeinberg)\n"+
             'genodata<-read.csv("'+tmpfile+'")\n'+
+            'print(head(genodata))\n'
             'png("'+ternaryplot+'")\n'+
             'HWTernaryPlot(genodata)\n'+
             'dev.off()\n' +
@@ -113,6 +114,7 @@ def hwTernaryPlot( targetdf, targetdir, prefix, vmax=10000 ):
             'png("'+qqplot+'")\n'+
             'HWGenotypePlot(genodata)\n'+
             'dev.off()\n' )
+            #'genodata <- UniqueGenotypeCounts(genodata)\n'+
     out = robjects.r( rcmd )
 # END hwTernaryPlot
 

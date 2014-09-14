@@ -28,6 +28,8 @@ rscripts/dendrograms/*
 test/*
 #resources/*
 #rscripts/*
+resources/bamfiles/*
+resources/hgdppanel4/*
 rscripts/figures/*
 docs/*
 

@@ -36,6 +36,33 @@ def modifyFamFile( famfile, targetfile, annotcol="Continent" ):
     return famdata[annotcol].unique().tolist()
 # END modifyMapFile
 
+def plotRDendrograms( bedfile, famfile, distfile, mdsfile, nclust=10, force=False ) :
+    print "Running plotRDendrograms"
+    filepath,basename,suffix = hk.getBasename(bedfile)
+    fbase = basename[:basename.find(".")]
+    #mydata = os.path.join(filepath,basename)
+    #genomefile = mydata+".genome"
+
+    clustfile = os.path.join(filepath,"ibs_%s_ward.txt"%fbase)
+    if os.path.exists(clustfile) and not force :
+        return clustfile
+
+    rcmd = ('source("rscripts/dendrogram.R")\n'+
+            'famfile<-"%s"\n'%famfile+
+            'distfile<-"%s"\n'%distfile+
+            'mdsfile<-"%s"\n'%mdsfile+
+            'nclust<-%d\n'%nclust+
+            'targetdir<-"%s"\n'%filepath+
+            'plotIBSdendrogram(famfile,distfile,"ward",nclust,targetdir)\n'+
+            'plotMDSdendrogram(famfile,mdsfile,"ward",targetdir)\n'+
+            '\n'
+           )
+    print rcmd
+    out = robjects.r( rcmd )
+    assert os.path.exists(clustfile), "No clust file produced!"
+    return clustfile
+# END plotRDendrograms
+
 ################################################################################
 def runClustering( bedfile, force=False, mdsplot=20 ):
     print "Running runClustering"
@@ -61,7 +88,10 @@ def runClustering( bedfile, force=False, mdsplot=20 ):
     if not os.path.exists(genomefile) or force :
         command = ["plink","--bfile",mydata,"--genome","--out",mydata]
         print " ".join(command)
-        out = subprocess.check_output(command)
+        try :
+            out = subprocess.check_output(command)
+        except subprocess.CalledProcessError as e :
+            print "Plink error:",e; sys.exit(1)
 
     # Produce NxN matrix
     print "NxN cluster"
@@ -93,6 +123,73 @@ def runClustering( bedfile, force=False, mdsplot=20 ):
 
     return annotfamfile, mdistfile, mdsfile
 # END runClustering
+
+################################################################################
+def parseClustFile( bedfile, clustfile ) :
+    print "Running parseClustFile"
+    filepath,basename,suffix = hk.getBasename(bedfile)
+    #fbase = basename[:basename.find(".")]
+    newannotfile = os.path.join(filepath,basename+".annot")
+    famfile = os.path.join(filepath,basename+".fam")
+    clustdata = read_csv( clustfile, sep="\t" )
+
+    #print hk.dfTable(clustdata[clustdata.clust == 8].group)
+    
+    grdict = {"Arabian Peninsula":"AP","Central Asia":"CA",
+              "Northeast Africa":"NEA","Northwest Africa":"NWA",
+              "Syrian Desert":"SD","Turkish Peninsula":"TP"}
+    grpcounts = []
+    for grp, cdata in clustdata.groupby(["clust"]) :
+        gtbl = hk.dfTable( cdata["group"] ).reset_index(drop=True)
+        grpname = "None"
+        if ((gtbl.ix[0,"Variable"] == "Unknown") and
+            (gtbl.ix[1,"Variable"] == "Africa")) :
+            grpname = "Africa"
+        elif ((gtbl.ix[0,"Variable"] == "Northeast Africa") and
+           (len(cdata) == 74)) : 
+            grpname = "Syrian Desert"
+        else : 
+            grpname = gtbl.ix[0,"Variable"]
+
+        if grdict.has_key( grpname ) : grpname = grdict[grpname]
+        grpcounts.append(Series({"grpname":grpname,"clust":grp,
+                                 "nsamp":gtbl["Count"].sum()}))
+
+    grpcounts = DataFrame(grpcounts)
+    #print grpcounts.head()
+
+    #newgrps = []
+    grpcounts["GeographicRegions3"] = grpcounts.grpname
+    for grp, data in grpcounts.groupby("grpname") :
+        if len(data) > 1 and grp != "Unknown":
+            cnt = 1
+            for idx,row in data.iterrows() :
+                grpcounts.ix[idx,"GeographicRegions3"] = grp+str(cnt)
+                cnt += 1 
+
+    print grpcounts.head()
+
+    keepcols = ["label","clust"]
+    clustannot = merge( clustdata[keepcols], grpcounts, on="clust" )
+    clustannot.rename(columns={"label":"Individual.ID"},inplace=True)
+
+    famdata = read_csv(famfile, delim_whitespace=True, header=None, 
+                       names=["FID","Individual.ID","MID","PID","Gender","AFF"] )
+    clustannot = merge( famdata[["FID","Individual.ID"]],clustannot, 
+                       on="Individual.ID",how="left") 
+
+    print clustannot.head()
+    clustannot = addSampleAnnotation( clustannot, "Individual.ID" )
+    clustannot.loc[clustannot.GeographicRegions2.isnull(),"GeographicRegions2"] = "Unknown"
+    tofix = clustannot.GeographicRegions3.isnull()
+    clustannot.loc[tofix,"GeographicRegions3"] = clustannot.loc[tofix,"GeographicRegions2"].tolist()
+    tofix = clustannot.GeographicRegions3.isin(["America","East Asia","Oceania"])
+    clustannot.loc[tofix,"GeographicRegions3"] = "Unknown"
+    print "Writing file:",newannotfile
+    clustannot.to_csv( newannotfile, sep="\t", index=False )
+
+    return newannotfile
+# END parseClustFile
 
 def seriousClean( vcffile, rerun=False ):
     print "Running seriousClean"
@@ -139,6 +236,16 @@ def seriousClean( vcffile, rerun=False ):
     #print vcffile
 # END seriousClean
  
+def clusterWorkflow( vcffile, nclust, force=False ) :
+    bedfile = seriousClean( vcffile, False )
+
+    famfile, distfile, mdsfile = runClustering( bedfile, force=False )
+
+    clustfile = plotRDendrograms( bedfile, famfile, distfile, mdsfile, nclust, True )
+
+    newannotfile = parseClustFile( bedfile, clustfile )
+# END clusterWorkflow
+
 ######################################################################
 if __name__ == "__main__":
 
@@ -161,13 +268,17 @@ if __name__ == "__main__":
     vcffile = "./rawdata/merge1kg/me1000G.X.vcf.gz"
     vcffile = "./rawdata/mevariome/variome.X.vcf.gz"
     vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
-    #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
-    #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
+    #vcffile = "./rawdata/mevariome/variome.vcf.gz"
+    vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    #vcffile = "./rawdata/merge1kg/me1000G.vcf.gz"
+    vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
+    #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
+    vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
     
     #bedfile = seriousClean2( vcffile, True )
-    bedfile = seriousClean( vcffile, False )
 
-    famfile, distfile, mdsfile = runClustering( bedfile, force=True )
-
+    if vcffile.find("daily") : nclust = 2
+    else : nclust = 10
+    clusterWorkflow( vcffile, nclust )
 # END MAIN

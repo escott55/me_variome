@@ -262,7 +262,6 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
               "ethnicity","country"]].to_csv( 
         afterfilterfile, sep="\t", index=False )
 
-    sys.exit(1)
     return finalkeepfile
 # END identifySamplesToKeep
 
@@ -284,7 +283,7 @@ def makeCleanVCF( vcffile, keepfile=None, toforce=False ) :
     # identify samples to keep 
     # remove related
     # remove outliers
-    keepfile = identifySamplesToKeep( vcffile, force=True ) 
+    keepfile = identifySamplesToKeep( vcffile, force=False ) 
     print "Keep file is:",keepfile
 
     #if keepfile is not None :

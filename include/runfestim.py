@@ -758,16 +758,13 @@ def mergehetfiles( hetfiles, targetfile, patientdata ) :
 ################################################################################
 # calculateIBC
 ################################################################################
-def calculateIBC( targetfile, rerun=False ) :
+def calculateIBC( targetfile, patientdata, rerun=False ) :
     write2log(" - Running "+whoami(), True)
     print "FEstim Targetfile:",targetfile
 
     # Parse Patient data
     #patientannotation = "./resources/annotation/patientannotation.ped"
     #patientdata = read_csv( patientannotation, sep="\t" )
-    targetpats = patientInfo.getPats( targetfile )
-    patientdata = sampleAnnotation(targetpats)
-
     filepath, basename, suffix = getBasename( targetfile )
     print filepath, basename, suffix
     targetdir = "%s/ibc/" % filepath
@@ -836,15 +833,15 @@ def calculateIBC( targetfile, rerun=False ) :
 ################################################################################
 # calculateIBC_all
 ################################################################################
-def calculateIBC_all( targetfile, rerun=False ) :
+def calculateIBC_all( targetfile, patientdata, rerun=False ) :
     write2log(" - Running "+whoami(), True)
     print "FEstim Targetfile:",targetfile
 
     # Parse Patient data
     #patientannotation = "./resources/annotation/patientannotation.ped"
     #patientdata = read_csv( patientannotation, sep="\t" )
-    targetpats = patientInfo.getPats( targetfile )
-    patientdata = sampleAnnotation(targetpats)
+    #targetpats = patientInfo.getPats( targetfile )
+    #patientdata = sampleAnnotation(targetpats)
 
     filepath, basename, suffix = getBasename( targetfile )
     print filepath, basename, suffix
@@ -910,7 +907,7 @@ if __name__ == "__main__" :
     os.chdir("..")
     optlist, args = getopt.getopt( sys.argv[1:], "r:ot")
     optlist = dict(optlist)
-    filename = None
+    vcffile = None
 
     dataset = optlist.get("-r",None)
     if dataset is None and not optlist.has_key("-t"):
@@ -924,21 +921,24 @@ if __name__ == "__main__" :
     path = os.path.abspath("./rawdata/")
     #vcffile = path+"ciliopathies/ciliopathies.unfilt.vcf.gz"
     #if dataset == "ciliopathies" :
-        #filename = "/home/escott/workspace/inbreed/rawdata/ciliopathies/ciliopathies.chimp.recode.vcf.gz"
+        #vcffile = "/home/escott/workspace/inbreed/rawdata/ciliopathies/ciliopathies.chimp.recode.vcf.gz"
     if dataset == "daily" :
-        filename = "/home/escott/workspace/variome/rawdata/daily/daily.clean.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/daily/daily.clean.vcf.gz"
+        clustfile = "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean.annot"
     elif dataset == "onekg" :
-        filename = "/home/escott/workspace/variome/rawdata/onekg/main/onekg.clean.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/onekg/main/onekg.clean.vcf.gz"
     elif dataset == "mevariome" :
-        filename = "/home/escott/workspace/variome/rawdata/mevariome/main/variome.clean.vcf.gz"
+        clustfile = "/media/data/workspace/variome/rawdata/mevariome/main/clust/variome.clean.annot"
+        vcffile = "/home/escott/workspace/variome/rawdata/mevariome/main/variome.clean.vcf.gz"
     elif dataset == "merge1kg" :
-        filename = "/home/escott/workspace/variome/rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
     elif dataset == "mergedaly" :
-        filename = "/home/escott/workspace/variome/rawdata/mergedaly/main/meceu.clean.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/mergedaly/main/meceu.clean.vcf.gz"
     elif dataset == "test2" :
-        filename = "/home/escott/workspace/variome/rawdata/test2/main/test2.clean.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/test2/main/test2.clean.vcf.gz"
     elif dataset == "casanova" :
-        filename = "/home/escott/workspace/variome/rawdata/casanova/casanova.snp.recal.chimp.regions.filt.samp.vcf.gz"
+        vcffile = "/home/escott/workspace/variome/rawdata/casanova/casanova.snp.recal.chimp.regions.filt.samp.vcf.gz"
     else : print "Error: no dataset provided:",dataset
 
     outdir = "./results/liftover/tmp"
@@ -946,16 +946,36 @@ if __name__ == "__main__" :
     #plinkout = "results/plink_ibc.het"
     #plinkout = "rawdata/merged/ibc/merged.chimp.regions.filt.samp.plink.recode12.mod.het"
 
+    #targetpats = patientInfo.getPats( vcffile )
+    filepats = patientInfo.currentFilePats( vcffile )
+    if os.path.exists(clustfile) :
+        sampleannot = read_csv( clustfile, sep="\t" )
+        sampleannot.index = sampleannot["Individual.ID"]
+        sampleannot = sampleannot.ix[filepats,:]
+        mapping_regions = {"NWA":"NWA", "NEA":"NEA", "AP":"AP",
+                           "SD":"SD", "TP":"TP", "CA":"CA",
+                           "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
+                           "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
+                           "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
+                           "Anglo-American":"Anglo-American"
+                          }
+        sampleannot["Continent2"] = [mapping_regions[x] if mapping_regions.has_key(x)
+                                      else "Unknown"
+                                      for x in sampleannot.GeographicRegions3]
+    else :
+        sampleannot = sampleAnnotation( filepats )
+
+
     changeLogFile( LOGDIR+"/runfestim_test.log" )
 
-    print optlist,"Dataset:",dataset,"Filename:",filename
+    print optlist,"Dataset:",dataset,"Filename:",vcffile
     if optlist.has_key("-t") : 
         festimout = "results/test_inbreedings.out"
         plinkout = "rawdata/onekg/ibc/onekg.chimp.regions.filt.samp.samp.plink.recode12.mod.het"
         ibcCountryCorrelation( plinkout, festimout )
-    elif filename is not None : 
-        #calculateIBC_all( filename, rerun=optlist.has_key("-o") )
-        calculateIBC( filename, rerun=optlist.has_key("-o") )
+    elif vcffile is not None : 
+        #calculateIBC_all( filename, sampleannot,rerun=optlist.has_key("-o") )
+        calculateIBC( vcffile, sampleannot, rerun=optlist.has_key("-o") )
 
     #plotIBC() 
     #ibcCorrelation( plinkout, festimout )

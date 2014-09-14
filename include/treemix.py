@@ -94,27 +94,30 @@ def plotTree( prefix, pop_order ) :
     assert os.path.exists(treefigfile)
 # END plotTree
 
-def makeClusterFile( famfile, pfactor="Continent" ) :
+def makeClusterFile( famfile, sampleannot, pfactor="Continent" ) :
     filebase, ext = os.path.splitext( famfile )
-    patientdata = sampleAnnotation()
+    #patientdata = sampleAnnotation()
 
     famdata = read_csv( famfile, header=None, delim_whitespace=True,
                        names=["FID","IID","PID","MID","gender","aff"] )
-    #print famdata.head(10)
+    print famdata.head(10)
     famdata["IID"] = [x[:x.find(".")] if x.find(".") > 0 else x
                       for x in famdata["IID"].tolist()]
     tids = famdata["IID"].tolist()
-    patientdata["IID"] = [x[:x.find("_")] if x[:x.find("_")] in tids 
-                          and x.find("JL") > 0
-                          else x
-                          for x in patientdata["Individual.ID"]]
-    alldata = merge(famdata, patientdata, on="IID", how="left")
-                    #left_on="IID", right_on="Individual.ID",how="left")
+    #patientdata["IID"] = [x[:x.find("_")] if x[:x.find("_")] in tids 
+                          #and x.find("JL") > 0
+                          #else x
+                          #for x in patientdata["Individual.ID"]]
+    #alldata = merge(famdata, patientdata, on="IID", how="left")
+    print sampleannot.head()
+    alldata = merge(famdata, sampleannot[["Individual.ID",pfactor]], 
+                    left_on="IID", right_on="Individual.ID",how="left")
     #print alldata.head()
     assert len(alldata) == len(famdata)
 
     alldata["cluster"] = factorize( alldata[pfactor] )[0]
     #print alldata[["FID","IID","cluster",pfactor]].head()
+    print alldata.head()
     clusterfile = filebase+".clust"
 
     print "Writing file:", clusterfile
@@ -136,7 +139,7 @@ def treemixRegions( treemixfile ) :
 # plink --bfile data --freq --missing --within data.clust
 # gzip plink.frq
 # plink2treemix.py plink.frq.gz treemix.frq.gz
-def convertPlink2Treemix( bedfile, pfactor="Continent", force=False ):
+def convertPlink2Treemix( bedfile, sampleannot, pfactor="Continent", force=False ):
     print "Running convertPlink2Treemix -",bedfile
     filepath, basename, suffix = hk.getBasename(bedfile)
     famfile = "%s/%s.fam" %(filepath,basename)
@@ -148,7 +151,7 @@ def convertPlink2Treemix( bedfile, pfactor="Continent", force=False ):
         regions = treemixRegions( treemixfile )
         return treemixfile, regions
 
-    clusterfile = makeClusterFile( famfile, pfactor )
+    clusterfile = makeClusterFile( famfile, sampleannot, pfactor )
     frqfile = plink_makefrqfile( bedfile, clusterfile, force )
     print " ".join(["plink2treemix.py",frqfile,treemixfile,clusterfile])
     subprocess.call(["plink2treemix.py",frqfile,treemixfile,clusterfile])
@@ -187,6 +190,7 @@ def runTreeMix( treemixfile, migrationevents=0, root=None, annotcol=None, force=
         out = subprocess.check_output( treemixcommand, stderr=subprocess.STDOUT )
     except subprocess.CalledProcessError as e:
         print e
+        print e.output
         sys.exit(1)
     open(treemixout,"w").writelines(out)
     return targetbase
@@ -207,6 +211,7 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
                "--remove-filtered-all",
                "--remove-indels",
                "--maf",".005",
+               "--hwe",".001",
                "--min-alleles","2",
                "--max-alleles","2",
                "--plink-tped","--out",cleanped]
@@ -236,9 +241,55 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
     #frqfile = plink_makefrqfile( modped, force=rerun )
     #newfrq, excludebase = pop.excludeSnps( modped, force=rerun )
 
-################################################################################
 def getLevels( annotcol, targetvcf ):
     print "Running getLevels"
+    if annotcol == "GeographicRegions2" :
+        levels = target_geographic_regions2
+    elif annotcol == "Continent" :
+        levels = target_continents
+    elif annotcol == "GeographicRegions" :
+        levels = target_geographic_regions
+        if "Oceania" in levels : levels.remove("Oceania")
+        if "America" in levels : levels.remove("America")
+        print levels
+    elif annotcol == "GeographicRegions3" :
+        levels = target_geographic_regions3
+        #levels = onekg_ethnicities
+        if "Europe" in levels : levels.remove("Europe")
+        if "Africa" in levels : levels.remove("Africa")
+        if "East Asia" in levels : levels.remove("East Asia")
+    else :
+        print "Error: unknown levels for column -",annotcol
+        sys.exit(1)
+
+    targetpats = patientInfo.getPats( targetvcf )
+
+    filepath,fbase,suffix = hk.getBasename(targetvcf)
+
+    clustannotfile = os.path.join(filepath[:filepath.find("main")+4],"clust",fbase+".annot")
+    if annotcol =="GeographicRegions3":
+        assert os.path.exists(clustannotfile), ("Error: clust annot file not found:"
+                                                +clustannotfile)
+        sampleannot = read_csv(clustannotfile,sep="\t")
+        sampleannot = sampleannot[sampleannot["Individual.ID"].isin(targetpats)]
+        sampleannot = sampleannot[(sampleannot[annotcol].notnull()) &
+                                    ~(sampleannot[annotcol].isin(["Unknown","Unknown1","Unknown2"]))]
+    else :
+        sampleannot = sampleAnnotation(targetpats)
+        sampleannot = sampleannot[(sampleannot[annotcol].notnull()) &
+                                    (sampleannot[annotcol] != "Unknown")]
+        sampleannot[annotcol] = [x.strip().replace(" ",".") for x in sampleannot[annotcol]]
+
+    finallevels = [x for x in levels if x in sampleannot[annotcol].unique()]
+    sampleannot = sampleannot[sampleannot[annotcol].isin(finallevels)]
+
+    #keepfiles = sampleannot["Individual.ID"].tolist()
+    return finallevels, sampleannot#, keepfiles
+# END getLevels
+
+################################################################################
+def getLevels_old( annotcol, targetvcf ):
+    print "Running getLevels_old"
     if annotcol == "GeographicRegions2" :
         removelev = ["Central Asia"]
         levels = [x for x in target_geographic_regions2 if x not in removelev]
@@ -265,7 +316,7 @@ def getLevels( annotcol, targetvcf ):
     sampleannot = sampleannot[sampleannot[annotcol].isin(finallevels)]
     #keepfiles = sampleannot["Individual.ID"].tolist()
     return finallevels, sampleannot#, keepfiles
-# END getLevels
+# END getLevels_old
 
 ################################################################################
 if __name__ == "__main__":
@@ -285,7 +336,7 @@ if __name__ == "__main__":
     #targetdir = os.path.join(filepath,"tree")
     #hk.makeDir(targetdir)
 
-    annotcol = "GeographicRegions2"
+    annotcol = "GeographicRegions3"
     targetvcf = hk.copyToSubDir( vcffile, "tree/"+annotcol )
     filepath, filename, suffix = hk.getBasename(targetvcf)
 
@@ -299,18 +350,18 @@ if __name__ == "__main__":
 
     bedfile = seriousClean( targetvcf, keepfile, rerun=True )
 
-    treemixfile, regions = convertPlink2Treemix( bedfile, annotcol, force=True )
+    print sampleannot.GeographicRegions3.unique()
+    treemixfile, regions = convertPlink2Treemix( bedfile, sampleannot, annotcol, force=True )
     #print treemixfile
     print "Regions:",regions
     print "treemix file:",treemixfile 
-    
     root = None
     if "Africa" in regions : root = "Africa"
-    if "YRI" in regions : root = "YRI,LWK"
+    if "YRI" in regions : root = "YRI"
     else : None
 
-    #for numevents in [0] :
     for numevents in [0,1,2,3,4] :
+    #for numevents in [0] :
         treemixoutbase = runTreeMix( treemixfile, numevents, root, annotcol, force=True )
         treemixsuffixes = ["cov","covse","edges","modelcov","treeout","verticies"]
         for suffix in treemixsuffixes :

@@ -4,15 +4,17 @@ library(RColorBrewer)
 palette(brewer.pal(8, "Dark2"))
 library(ggdendro)
 library(ggplot2)
+library(reshape)
+library(plyr)
 
-source("themes.R")
+source("/home/escott/workspace/variome/rscripts/themes.R")
 
 plotAdmixDendrogram <- function(tfile,K, clustmethod="ward") {
     print(tfile)
 
-    basename <- strsplit(basename(tfile),'\\.')[[1]][1]
+    fbase <- strsplit(basename(tfile),'\\.')[[1]][1]
 
-    figname <- paste("dendrograms/",basename,"_admix_",clustmethod,".pdf",sep="") 
+    figname <- paste("dendrograms/",fbase,"_admix_",clustmethod,".pdf",sep="") 
 
     if( clustmethod == "ward" ){
         clustmethod <- "ward.D2"
@@ -26,8 +28,8 @@ plotAdmixDendrogram <- function(tfile,K, clustmethod="ward") {
     dd.row <- as.dendrogram(hclust(dist(t(x)), method="ward.D2"))
     ddata_x <- dendro_data(dd.row)
 
-    labs <- label(ddata_x)
-    labs$group <- admix[as.vector(labs$label),"GeographicRegions"]
+    grlabs <- label(ddata_x)
+    grlabs$group <- admix[as.vector(grlabs$label),"GeographicRegions"]
 
     xsegments <- segment(ddata_x)
     xsegments$newy <- xsegments$y / max(xsegments$y)*10
@@ -36,12 +38,12 @@ plotAdmixDendrogram <- function(tfile,K, clustmethod="ward") {
     allcolors <- c(brewer.pal(9,"Set1"),brewer.pal(8,"Set2"),brewer.pal(10,"Set3"))
     p2 <- (ggplot(xsegments) +
            geom_segment(aes(x=x, y=newy, xend=xend, yend=newyend)) + 
-           geom_tile(data=labs, aes(x=x, y=-.5, fill=group), size=.25 ) +
-           ggtitle( paste(basename,":",clustmethod) ) +
+           geom_tile(data=grlabs, aes(x=x, y=-.5, fill=group), size=.25 ) +
+           ggtitle( paste(fbase,":",clustmethod) ) +
            scale_y_continuous("Distance") +
            scale_x_continuous("Sample") +
            #scale_fill_brewer(palette="Set3") +
-           scale_fill_manual(values=allcolors[1:length(unique(labs$group))]) +
+           scale_fill_manual(values=allcolors[1:length(unique(grlabs$group))]) +
            hclusttheme )
 
     print(paste("Writing file:",figname))
@@ -55,7 +57,7 @@ plotAdmixDendrogram <- function(tfile,K, clustmethod="ward") {
 plotPCAdendro <- function( pcafile, withdaisy=F, clustmethod="ward" ){
     require(cluster)
 
-    basename <- strsplit(basename(pcafile),'\\.')[[1]][1]
+    fbase <- strsplit(basename(pcafile),'\\.')[[1]][1]
 
     pcatable <- read.table(pcafile, header=F, sep="", comment.char="", na.strings="", fill=T)
     rownames(pcatable) <- pcatable$V1
@@ -67,7 +69,7 @@ plotPCAdendro <- function( pcafile, withdaisy=F, clustmethod="ward" ){
     cont <- c("Africa","East.Asia","Europe")
     pca <- pcatable[tannot %in% contcompare,1:(ncol(pcatable)-1)]
 
-    figname <- paste("dendrograms/",basename,"_",clustmethod,".pdf",sep="") 
+    figname <- paste("dendrograms/",fbase,"_",clustmethod,".pdf",sep="") 
 
     if( clustmethod == "ward" ){
         clustmethod <- "ward.D2"
@@ -81,10 +83,10 @@ plotPCAdendro <- function( pcafile, withdaisy=F, clustmethod="ward" ){
         p2 <- ggplot(segment(ddata_x)) +
               geom_segment(aes(x=x, y=y, xend=xend, yend=yend))
 
-        labs <- label(ddata_x)
-        labs$group <- pcatable[as.vector(labs$label),ncol(pcatable)]#"GeographicRegions"
+        grlabs <- label(ddata_x)
+        grlabs$group <- pcatable[as.vector(grlabs$label),ncol(pcatable)]#"GeographicRegions"
 
-        p2 <- p2 + geom_tile(data=labs, aes(x=x, y=-.5, fill=group), size=.25 )#label=label, 
+        p2 <- p2 + geom_tile(data=grlabs, aes(x=x, y=-.5, fill=group), size=.25 )#label=label, 
     }
     else 
     {
@@ -101,18 +103,18 @@ plotPCAdendro <- function( pcafile, withdaisy=F, clustmethod="ward" ){
         #p2 <- ggplot(segment(ddata_x)) +
               #geom_segment(aes(x=x, y=y, xend=xend, yend=yend))
 
-        labs <- label(ddata_x)
-        labs$group <- pcatable[as.vector(labs$label),ncol(pcatable)]#"GeographicRegions"
+        grlabs <- label(ddata_x)
+        grlabs$group <- pcatable[as.vector(grlabs$label),ncol(pcatable)]#"GeographicRegions"
 
         allcolors <- c(brewer.pal(9,"Set1"),brewer.pal(8,"Set2"),brewer.pal(10,"Set3"))
         p2 <- (ggplot(xsegments) +
                geom_segment(aes(x=x, y=newy, xend=xend, yend=newyend)) +
-               geom_tile(data=labs, aes(x=x, y=-.5, fill=group), size=.25 ) + 
-               ggtitle( paste(basename,":",clustmethod) ) +
+               geom_tile(data=grlabs, aes(x=x, y=-.5, fill=group), size=.25 ) + 
+               ggtitle( paste(fbase,":",clustmethod) ) +
                scale_y_continuous("Distance") +
                scale_x_continuous("Sample") +
                #scale_fill_brewer(palette="Set3") +
-               scale_fill_manual(values=allcolors[1:length(unique(labs$group))]) +
+               scale_fill_manual(values=allcolors[1:length(unique(grlabs$group))]) +
                hclusttheme )
     }
     print(paste("Writing file:",figname))
@@ -122,8 +124,10 @@ plotPCAdendro <- function( pcafile, withdaisy=F, clustmethod="ward" ){
 }
 
 # plotIBSdendrogram
-plotIBSdendrogram <- function( famfile, distfile, clustmethod="ward" ){
-    basename <- strsplit(basename(distfile),'\\.')[[1]][1]
+plotIBSdendrogram <- function( famfile, distfile, clustmethod="ward", 
+                              nclust=7, targetdir="./dendrograms" ){
+
+    fbase <- strsplit(basename(distfile),'\\.')[[1]][1]
     famtable <- read.table(famfile, header=T, sep="\t", comment.char="", na.strings="")
     rownames(famtable) <- famtable$IID
 
@@ -132,32 +136,80 @@ plotIBSdendrogram <- function( famfile, distfile, clustmethod="ward" ){
     colnames(ibsdist) <- famtable$IID
     print( paste("Any missing values:",any(is.na(as.matrix(ibsdist))) ))
 
-    figname <- paste("dendrograms/ibs_",basename,"_",clustmethod,".pdf",sep="") 
+    onekgpops <- c("ASW","CEU","CHB","CHS","CLM","FIN","GBR",
+                   "IBS","JPT","LWK","MXL","PUR","TSI","YRI")
+    tokeep <- !(is.na(famtable$GeographicRegions) | 
+                      famtable$GeographicRegions %in% c("America","Oceania","")  |
+                      famtable$GeographicRegions2 %in% c(c("East Asia"),onekgpops) ) 
+    #"Africa","Europe","Unknown"
+    tokeep <- !( is.na(famtable$GeographicRegions) ) 
+
+    famtable <- famtable[tokeep,]
+    ibsdist <- ibsdist[tokeep,tokeep]
+
+    figname <- paste(targetdir,"/ibs_",fbase,"_",clustmethod,".pdf",sep="") 
+    labfile <- paste(targetdir,"/ibs_",fbase,"_",clustmethod,".txt",sep="") 
     if( clustmethod == "ward" ){
         clustmethod <- "ward.D2"
     }
 
     # ward.D, ward.D2, single, complete, average, mcquitty
-    dd.row <- as.dendrogram(hclust(as.dist(ibsdist), method=clustmethod))
+    hc <- hclust(as.dist(ibsdist), method=clustmethod)
+
+    # Remove Africans!
+    if( F ) {
+        myclusters <- as.data.frame(cutree( hc, 2 ))
+        colnames(myclusters) <- c("clust")
+        myclusters$labels <- rownames(myclusters)
+        myclusters$group <- famtable[as.vector(myclusters$label),"Continent2"]
+        gcounts <- melt(table( myclusters[,c("group","clust")] ) )
+        clustrename <- ddply(gcounts, "group", function(x) x[which.max(x$value),])
+        rownames(clustrename) <- clustrename$group
+        meclust <- clustrename["Middle East","clust"]
+        tokeep <- as.vector(myclusters[myclusters$clust == meclust,"labels"])
+        ibsdist_filt <- ibsdist[tokeep,tokeep]
+        hc <- hclust(as.dist(ibsdist_filt), method=clustmethod)
+    }
+
+    myclusters <- cutree( hc, nclust )
+
+    dd.row <- as.dendrogram(hc)
     ddata_x <- dendro_data(dd.row)
 
     xsegments <- segment(ddata_x)
     xsegments$newy <- xsegments$y / max(xsegments$y)*10
     xsegments$newyend <- xsegments$yend / max(xsegments$yend)*10
 
-    labs <- label(ddata_x)
-    labs$group <- famtable[as.vector(labs$label),"GeographicRegions2"]#"GeographicRegions"
+    grlabs <- label(ddata_x)
+    grlabs$group <- famtable[as.vector(grlabs$label),"GeographicRegions2"]#"GeographicRegions"
+    grlabs$eth <- famtable[as.vector(grlabs$label),"ethnicity"]
+    grlabs$source <- famtable[as.vector(grlabs$label),"Source"]
+    grlabs$origin <- famtable[as.vector(grlabs$label),"Origin"]
+    grlabs$clust <- as.factor(myclusters[as.vector(grlabs$label)])
+
+    print(table( grlabs[,c("group","clust")] ))
+    gcounts <- melt(table( grlabs[,c("group","clust")] ) )
+    #maxclust <- data.frame(tapply(gcounts[,3], gcounts[,2], max))
+    clustrename <- ddply(gcounts, "clust", function(x) x[which.max(x$value),])
+    colnames( clustrename ) <- c("closest","clust","nsamp")
+    #dups <- ddply(clustrename,.(group),nrow)
+    #clustrename <- merge( clustrename, dups, by="group" )
+    grlabs <- merge( grlabs, clustrename, by="clust" )
+
+    write.table( grlabs, file=labfile,quote=F, row.names=F, col.names=T, sep="\t" )
 
     allcolors <- c(brewer.pal(9,"Set1"),brewer.pal(8,"Set2"),brewer.pal(10,"Set3"))
     p2 <- (ggplot(xsegments) +
            geom_segment(aes(x=x, y=newy, xend=xend, yend=newyend)) +
-           geom_tile(data=labs, aes(x=x, y=-.5, fill=group), size=.25 ) +
-           ggtitle( paste(basename,":",clustmethod) ) +
+           geom_tile(data=grlabs, aes(x=x, y=-.5, fill=group), size=.25 ) +
+           geom_tile(data=grlabs, aes(x=x, y=-1.5, fill=clust), size=.25 ) +
+           #geom_tile(data=grlabs, aes(x=x, y=-.5, fill=eth), size=.25 ) +
+           scale_fill_manual("Clusters",values=allcolors) +
+           ggtitle( paste(fbase,":",clustmethod) ) +
            scale_y_continuous("Distance") +
            scale_x_continuous("Sample") +
-           #scale_fill_brewer(palette="Set3") +
-           scale_fill_manual(values=allcolors[1:length(unique(labs$group))]) +
            hclusttheme )
+           #scale_fill_manual(values=allcolors[1:length(unique(grlabs$group))]) +
     p2
 
     print(paste("Writing file:",figname))
@@ -166,10 +218,10 @@ plotIBSdendrogram <- function( famfile, distfile, clustmethod="ward" ){
     dev.off()
 } # END plotIBSdendrogram
 
-plotMDSdendrogram <- function( famfile, mdsfile, clustmethod="ward" ){
+plotMDSdendrogram <- function( famfile, mdsfile, clustmethod="ward", targetdir="./dendrograms" ){
     require(cluster)
 
-    basename <- strsplit(basename(mdsfile),'\\.')[[1]][1]
+    fbase <- strsplit(basename(mdsfile),'\\.')[[1]][1]
     famtable <- read.table(famfile, header=T, sep="\t", comment.char="", na.strings="")
     rownames(famtable) <- famtable$IID
 
@@ -180,7 +232,13 @@ plotMDSdendrogram <- function( famfile, mdsfile, clustmethod="ward" ){
     #cont <- c("Africa","East.Asia","Europe")
     #mds <- mdstable[tannot %in% contcompare,1:(ncol(mdstable)-1)]
 
-    figname <- paste("dendrograms/mds_",basename,"_",clustmethod,".pdf",sep="") 
+    tokeep <- !(is.na(famtable$GeographicRegions) | 
+                      famtable$GeographicRegions %in% c("Unknown","America","Oceania","") |
+                      famtable$GeographicRegions2 %in% c("Africa","Europe","East Asia") )
+
+    famtable <- famtable[tokeep,]
+    mds <- mds[tokeep,]
+    figname <- paste(targetdir,"/mds_",fbase,"_",clustmethod,".pdf",sep="") 
 
     if( clustmethod == "ward" ){
         clustmethod <- "ward.D2"
@@ -194,18 +252,18 @@ plotMDSdendrogram <- function( famfile, mdsfile, clustmethod="ward" ){
     xsegments$newy <- xsegments$y / max(xsegments$y)*10
     xsegments$newyend <- xsegments$yend / max(xsegments$yend)*10
 
-    labs <- label(ddata_x)
-    labs$group <- famtable[as.vector(labs$label),"GeographicRegions2"]#"GeographicRegions"
+    grlabs <- label(ddata_x)
+    grlabs$group <- famtable[as.vector(grlabs$label),"GeographicRegions2"]#"GeographicRegions"
 
     allcolors <- c(brewer.pal(9,"Set1"),brewer.pal(8,"Set2"),brewer.pal(10,"Set3"))
     p2 <- (ggplot(xsegments) +
            geom_segment(aes(x=x, y=newy, xend=xend, yend=newyend)) +
-           geom_tile(data=labs, aes(x=x, y=-.5, fill=group), size=.25 ) + 
-           ggtitle( paste(basename,":",clustmethod) ) +
+           geom_tile(data=grlabs, aes(x=x, y=-.5, fill=group), size=.25 ) + 
+           ggtitle( paste(fbase,":",clustmethod) ) +
            scale_y_continuous("Distance") +
            scale_x_continuous("Sample") +
            #scale_fill_brewer(palette="Set3") +
-           scale_fill_manual(values=allcolors[1:length(unique(labs$group))]) +
+           scale_fill_manual(values=allcolors[1:length(unique(grlabs$group))]) +
            hclusttheme )
     
     print(paste("Writing file:",figname))
@@ -214,37 +272,50 @@ plotMDSdendrogram <- function( famfile, mdsfile, clustmethod="ward" ){
     dev.off()
 } # plotMDSdendrogram
 
-tfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/admixture/Middle_East/me1000G.clean_Middle_East.5_annot.tsv"
-K <- 5
-tfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/admixture/me1000G.clean.10_annot.tsv"
-K <- 10
-#tfile <- "/media/data/workspace/variome/rawdata/onekg/main/admixture/onekg.clean.6_annot.tsv"
-#K <- 6
-#plotAdmixDendrogram( tfile, K )
 
-#pcafile <- "/media/data/workspace/variome/rawdata/merge1kg/main/pca/pca/GeographicRegions2/me1000G.clean.recode12.exclude.evec"
-pcafile <- "/media/data/workspace/variome/rawdata/onekg/main/pca/pca/GeographicRegions2/onekg.clean.recode12.exclude.evec"
-#plotPCAdendro( pcafile )
+runTests <- function(){
+    tfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/admixture/Middle_East/me1000G.clean_Middle_East.5_annot.tsv"
+    K <- 5
+    tfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/admixture/me1000G.clean.10_annot.tsv"
+    K <- 10
+    #tfile <- "/media/data/workspace/variome/rawdata/onekg/main/admixture/onekg.clean.6_annot.tsv"
+    #K <- 6
+    #plotAdmixDendrogram( tfile, K )
 
-
-famfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean_annot.fam"
-distfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean.mdist"
-#famtable <- read.table(famfile, header=F, sep="", comment.char="", na.strings="", fill=T)
-
-plotIBSdendrogram( famfile, distfile, clustmethod="ward" )
-
-mdsfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean.mds"
-
-plotMDSdendrogram( famfile, mdsfile, clustmethod="ward" )
+    #pcafile <- "/media/data/workspace/variome/rawdata/merge1kg/main/pca/pca/GeographicRegions2/me1000G.clean.recode12.exclude.evec"
+    pcafile <- "/media/data/workspace/variome/rawdata/onekg/main/pca/pca/GeographicRegions2/onekg.clean.recode12.exclude.evec"
+    #plotPCAdendro( pcafile )
 
 
-allclustmethods <- c( "ward.D", "ward.D2", "single", "complete", "average", "mcquitty" )
-for( clustm in allclustmethods ){
-    print(paste("Running method",clustm))
-    plotIBSdendrogram( famfile, distfile, clustm )
-    plotMDSdendrogram( famfile, mdsfile, clustm )
+    # ONEKG
+    famfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean_annot.fam"
+    distfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean.mdist"
+    mdsfile <- "/media/data/workspace/variome/rawdata/onekg/main/clust/onekg.clean.mds"
+
+    # Merge 1KG variome
+    famfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/clust/me1000G.clean_annot.fam"
+    distfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/clust/me1000G.clean.mdist"
+    mdsfile <- "/media/data/workspace/variome/rawdata/merge1kg/main/clust/me1000G.clean.mds"
+
+    famfile <- "/media/data/workspace/variome/rawdata/mevariome/main/clust/variome.clean_annot.fam"
+    distfile <- "/media/data/workspace/variome/rawdata/mevariome/main/clust/variome.clean.mdist"
+    mdsfile <- "/media/data/workspace/variome/rawdata/mevariome/main/clust/variome.clean.mds"
+
+    famfile <- "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean_annot.fam"
+    distfile <- "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean.mdist"
+    mdsfile <- "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean.mds"
+
+    plotIBSdendrogram( famfile, distfile, clustmethod="ward", nclust=10 )
+
+    plotMDSdendrogram( famfile, mdsfile, clustmethod="ward" )
+
+    allclustmethods <- c( "ward.D", "ward.D2", "complete", "average", "mcquitty" )
+    for( clustm in allclustmethods ){
+        print(paste("Running method",clustm))
+        plotIBSdendrogram( famfile, distfile, clustm )
+        plotMDSdendrogram( famfile, mdsfile, clustm )
+    }
 }
-
 #genotypes <- read.table(pedfile, header=F, sep="", comment.char="", na.strings="", fill=T)
 
 #labs$group <- with( labs, admix [ cbind(label, "GeographicRegions") ] )

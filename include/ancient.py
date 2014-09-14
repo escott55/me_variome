@@ -38,29 +38,24 @@ def modifyFamFile( famfile, targetfile, sampleannot ):
     famdata.index = famdata.IID
     famdata["Region"] = "Unk"
     famdata.update(sampleannot)
+    print famdata.head()
     #famdata = addSampleAnnotation( famdata, update=True )
-    #famdata[annotcol] = famdata[annotcol].apply(lambda x: 
-                        #x.strip().replace(' ','.'))
-    famdata["Region"] = famdata["Region"].apply(lambda x:
-                        x.strip().replace(' ','.'))
-           
-    famdata["Gender"] = famdata.Gender.astype(int)
-    #famdata["Gender"] = [1 if x == "M" else 2 for x in famdata.Gender]
-
+    famdata["Region"] = famdata["Region"].apply(lambda x: 
+                                                x.strip().replace(' ','.'))
+    #famdata["Gender"] = famdata.Gender.astype(int)
+    famdata["Gender"] = [1 if x == "M" else 2 for x in famdata.Gender]
     famdata.to_csv(targetfile, sep=" ", header=False, index=False, 
                    columns=["Fam","IID","MID","PID","Gender","Region"])
     assert os.path.exists(targetfile)
 
-    return famdata['Region'].unique().tolist()
+    return famdata["Region"].unique().tolist()
 # END modifyFamFile
 
 ################################################################################
 # makeParFile
 ################################################################################
-def makeParFile( bedfile, sampleannot, targetdir=None, 
-                numvec=20, fstonly=False ):
+def makeParFile( bedfile, sampleannot, targetdir=None, numvec=20 ):
     filepath,basename,ext = hk.getBasename(bedfile)
-    hk.makeDir(targetdir)
     bedfile = "%s/%s.bed" % (filepath,basename)
     bimfile = "%s/%s.bim" % (filepath,basename)
     famfile = "%s/%s.fam" % (filepath,basename)
@@ -68,7 +63,6 @@ def makeParFile( bedfile, sampleannot, targetdir=None,
     mapfile = "%s/%s.map" % (targetdir,basename)
     pedind = "%s/%s.pedind" % (targetdir,basename)
     #subprocess.call(["cp", famfile, pedind] )
-    #if annotcol in ["GRsub"] : annotcol = "GeographicRegions"
     regions = modifyFamFile( famfile, pedind, sampleannot )
     subprocess.call(["cp", bimfile, mapfile] )
 
@@ -86,8 +80,9 @@ def makeParFile( bedfile, sampleannot, targetdir=None,
                 "evaloutname:\t%s\n"%eigenval +
                 "outlieroutname:\t%s\n"%outliers +
                 "altnormstyle:\tNO\n"+
-                "fstonly:\t%s\n"%("YES" if fstonly else "NO") +
+                "fstonly:\tNO\n"+
                 "outliersigmathresh:\t6.0\n"+
+                "numoutlieriter:\t0\n"+
                 "numoutevec:\t%d\n"%numvec +
                 "numoutlierevec:\t5\n" +
                 "familynames:\tNO\n" +
@@ -112,15 +107,11 @@ def parseOutliers(outliers) :
     return samps
 # END parseOutliers
 
-def getTargetRegions( regions, annotcol ):
+def getTargetRegions( regions, annotcol ) :
     print "Regions:",regions
     if annotcol=="Continent" :
         targetregions = ["Middle.East","South.Asia","Europe","Africa","East.Asia"]
         regions = [x for x in regions if x in targetregions]
-    if annotcol=="Continent2" :
-        #targetregions = ["Middle.East","South.Asia","Europe","Africa","East.Asia"]
-        excluderegions = ["Unknown","America","Oceania"]
-        regions = sorted([x for x in regions if x not in excluderegions])
     elif annotcol=="ethnicity" :
         targetregions = ["Bedouin","Adygei","Druze","Mozabite","Palestinian"]
         regions = [x for x in regions if x in targetregions]
@@ -145,23 +136,25 @@ def getTargetRegions( regions, annotcol ):
         regions = regions
     else :
         print "Error: Unknown annotation:",annotcol
-
-    print "Regions:",regions
     return regions
 # END getTargetRegions
 
 ################################################################################
-# pcaOutlierAnalysis
+# pcaAnalysis
 ################################################################################
-def pcaOutlierAnalysis( eigfiles, force=False, 
+def pcaAnalysis( eigenfiles, targetdir=None, force=False, 
                        annotcol ="Continent", tcols="1:2" ):
-    print "Running pcaOutlierAnalysis" 
+    print "Running pcaAnalysis" 
 
     parfile,outliers,eigenvec,eigenval,regions = eigfiles
-    targetdir,basename,ext = hk.getBasename(parfile)
-    #targetdir = targetdir if targetdir is not None else filepath
-    #print "Using targetdir:",targetdir
-    #hk.makeDir(targetdir)
+
+    targetregions = (["Chimp","Denisova","Neander","Yoruba","Japanese","French","Bedouin"]  +
+                    ["NWA","NEA","AP","SD","TP","CA"])
+    regions = [x for x in regions if x in targetregions]
+
+    filepath,basename,suffix = hk.getBasename(parfile)
+    print "Using targetdir:",targetdir
+    hk.makeDir(targetdir)
     outbase = "%s_%s" %(basename, tcols.replace(":","_"))
 
     if not os.path.exists(outliers) or force :
@@ -172,21 +165,17 @@ def pcaOutlierAnalysis( eigfiles, force=False,
         except subprocess.CalledProcessError as e :
             print "Caught error:",e
 
-    tregions = getTargetRegions( regions, annotcol )
-
-    assert len(tregions) > 0
+    print "Regions:",regions
     plotfile = "%s/%s.xtxt" % (targetdir, outbase)
     command = ["ploteig","-i",eigenvec,"-c",tcols,
-                     "-p",":".join(tregions),
+                     "-p",":".join(regions),
                      "-x","-o",plotfile]
-
     print " ".join(command)
     print "Trying subprocess"
     print "Making file:",outbase,annotcol,".pdf"
     retval = subprocess.call(command)
     retval = subprocess.call(["mv","%s.pdf"%outbase, 
-                              "results/pcaplots/%s_%s.pdf" 
-                              %(outbase,annotcol)])
+                              "results/pcaplots/%s_%s.pdf" %(outbase,annotcol)])
     #print retval
     #print "Trying system!"
     #retval = os.system( " ".join(command) )
@@ -195,9 +184,8 @@ def pcaOutlierAnalysis( eigfiles, force=False,
     twout = "%s/%s.twout" % (targetdir, outbase)
     subprocess.call(["twstats","-t",twtable,"-i",eigenval,"-o",twout])
     outliersamps = parseOutliers(outliers)
-
     return outliersamps
-# END pcaOutlierAnalysis
+# END pcaAnalysis
 
 def makeFstPlot( fstdata, annotcol, basename, targetdir ):
     newdata = []
@@ -299,19 +287,19 @@ def makeFstPlot( fstdata, annotcol, basename, targetdir ):
     grdevices.dev_off()
 # END makeFstPlot
 
-def calcFst( eigenfiles, force=True, annotcol="Continent" ) :
+def calcFst( bedfile, targetdir, force=True, annotcol="Continent" ) :
     print "Running calcFst" 
 
-    parfile,outliers,eigenvec,eigenval,regions = eigfiles
-    filepath,basename,ext = hk.getBasename(parfile)
+    filepath,basename,ext = hk.getBasename(bedfile)
     targetdir = targetdir if targetdir is not None else filepath
     print "Using targetdir:",targetdir
     hk.makeDir(targetdir)
-    #eigfiles = makeParFile(filepath,basename,
-                             #targetdir=targetdir,
-                             #annotcol=annotcol,
-                             #fstonly=True ) 
+    eigfiles = makeParFile(filepath,basename,
+                             targetdir=targetdir,
+                             annotcol=annotcol,
+                             fstonly=True ) 
 
+    parfile,outliers,eigenvec,eigenval,regions = eigfiles
     fstfile = os.path.join( targetdir, basename+".fst")
     print "Fst file:", fstfile
     outfile = os.path.join( targetdir, basename+".runout")
@@ -400,14 +388,14 @@ def plink_makefrqfile( pedfile, force=forceFlag ) :
     return freqfile
 # END plink_makefrqfile
 
-def seriousClean( vcffile, rerun=False ): 
+def seriousClean( vcffile, mergeped, mergemap, rerun=False ): 
     print "Running seriousClean"
     patientdata = sampleAnnotation()
     filepath, basename, suffix = hk.getBasename(vcffile)
-    targetdir = "%s/pca/" % filepath
+    targetdir = "%s/ancient/" % filepath
     hk.makeDir(targetdir)
     cptargetfile = targetdir+basename+suffix+".gz"
-    cleanped = "%s/%s"%(targetdir,basename)
+    cleanped = "%s/%s_merge"%(targetdir,basename)
 
     if not os.path.exists(cptargetfile) :
         out = hk.runCommand( "cp %s/%s%s* %s" % (filepath,basename,suffix, targetdir) )
@@ -422,6 +410,7 @@ def seriousClean( vcffile, rerun=False ):
                "--remove-filtered-all",
                "--remove-indels",
                "--maf",".001",
+               "--hwe",".001",
                "--min-alleles","2",
                "--max-alleles","2",
                "--plink-tped","--out",cleanped]
@@ -431,147 +420,24 @@ def seriousClean( vcffile, rerun=False ):
     if not os.path.exists( tped ) or rerun:
         out = subprocess.check_output( command )
 
-    recodefile = plink_recode12( tped, force=rerun )
+    # plink merged
+    bedfile = cleanped+".bed"
+    if not os.path.exists( bedfile ) or rerun:
+        command = ["plink","--noweb","--tfile",cleanped,"--merge",
+                   mergeped,mergemap,"--make-bed","--out",cleanped]
+        out = subprocess.check_output( command )
+    #recodefile = plink_recode12( tped, force=rerun )
     # Modify ped
-    modped = pop.modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
+    #modped = pop.modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
     #pop.modify_tped( tped, patientdata, force=rerun )
     #print modped
-    frqfile = plink_makefrqfile( recodefile, force=rerun )
-    newfrq, excludebase = pop.excludeSnps( recodefile, force=rerun )
-    bedfile = pop.run_plink_convert(excludebase+".ped", force=rerun)
+    #frqfile = plink_makefrqfile( recodefile, force=rerun )
+    #newfrq, excludebase = pop.excludeSnps( recodefile, force=rerun )
+    #bedfile = pop.run_plink_convert(excludebase+".ped", force=rerun)
     #bedfile = pop.run_plink_convert(tped, force=rerun)
     return bedfile
     #print vcffile
 # END seriousClean
-
-def seriousClean2( vcffile, rerun=False ): 
-    print "Running seriousClean2"
-    patientdata = sampleAnnotation()
-    filepath, basename, suffix = hk.getBasename(vcffile)
-    targetdir = "%s/pca/" % filepath
-    hk.makeDir(targetdir)
-    cptargetfile = targetdir+basename+suffix+".gz"
-    cleanped = "%s/%s"%(targetdir,basename)
-
-    if not os.path.exists(cptargetfile) :
-        out = hk.runCommand( "cp %s/%s%s* %s" % (filepath,basename,suffix, targetdir) )
-        print "Copy targetfile:",cptargetfile
-
-    print "Making sample missingness estimates", cleanped
-    #command = ["vcftools","--gzvcf", cptargetfile,
-               #"--missing-indv","--out",cleanped]
-    #out = subprocess.check_output( command )
-
-    command = ["vcftools","--gzvcf", cptargetfile,
-               "--remove-filtered-all",
-               "--remove-indels",
-               "--maf",".001",
-               "--min-alleles","2",
-               "--max-alleles","2",
-               "--tped-plink","--out",cleanped]
-
-    print " ".join(command)
-    ped = cleanped+".ped"
-    #bedfile = pop.run_plink_convert(tped, force=rerun)
-    if not os.path.exists( ped ) or rerun:
-        tped = cleanped+".tped"
-        out = subprocess.check_output( command )
-        subprocess.call( ["plink","--noweb","--recode","--tfile",cleanped,"--out",cleanped] )
-
-    #recodefile = plink_recode12( ped, force=rerun )
-    # Modify ped
-    modped = pop.modify_ped( ped, patientdata, calcdistances=True, shorten=True, force=rerun )
-    #pop.modify_tped( tped, patientdata, force=rerun )
-    #print modped
-    frqfile = plink_makefrqfile( ped, force=rerun )
-    newfrq, excludebase = pop.excludeSnps( ped, force=rerun )
-    bedfile = pop.run_plink_convert(excludebase+".ped", force=rerun)
-    return bedfile
-    #print vcffile
-# END seriousClean2
-
-
-def plotPCA( tdf, basename, pc1, pc2, smallplot=False ):
-    tregions = tdf.Region.unique()
-    r_dataframe = com.convert_to_r_dataframe(tdf)
-    p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x=pc1, y=pc2) +
-                ggplot2.geom_point(ggplot2.aes_string(
-                    shape="factor(Region)",colour="factor(Region)"), size=1) +
-                #ggplot2.ggtitle("AF comparison between CEU and ME") +
-                #ggplot2.stat_smooth(method="lm", se=False)+
-                ggplot2.scale_y_continuous(pc2)+
-                ggplot2.scale_x_continuous(pc1)+
-                ggplot2.scale_shape_manual("Region",values=robjects.IntVector(range(1,len(tregions)+1)))+
-                ggplot2.scale_colour_brewer("Region",palette="Set1") +
-                ggplot2.theme(**pcatheme) )
-
-    psmall = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x=pc1, y=pc2) +
-                ggplot2.geom_point(ggplot2.aes_string(
-                    shape="factor(Region)",colour="factor(Region)"), size=.8) +
-                #ggplot2.ggtitle("AF comparison between CEU and ME") +
-                #ggplot2.stat_smooth(method="lm", se=False)+
-                ggplot2.scale_y_continuous(pc2)+
-                ggplot2.scale_x_continuous(pc1)+
-                ggplot2.scale_shape_manual("Region",values=robjects.IntVector(range(1,len(tregions)+1)))+
-                ggplot2.scale_colour_brewer("Region",palette="Set1") +
-                ggplot2.theme(**pcathemesmall) )
-
-                #ggplot2.scale_shape_discrete(solid=False)+
-
-    #psmall = p + ggplot2.theme(**pcathemesmall)
-    #plarge = p + ggplot2.theme(**pcatheme)
-    #if ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)})
-    figname = "results/figures/pca/%s_%s%s_pcs.pdf" % (basename, pc1, pc2)
-    print "Writing file:",figname
-    grdevices.pdf(figname, width=5, height=4)
-    p.plot()
-    grdevices.dev_off()
-    #p = p  + ggplot2.theme(**{'legend.position':"none"}) 
-    return psmall
-# ENd plotPCA
-
-def plotPCAGrid( eigfiles ) :
-    parfile,outliers,eigenvec,eigenval,regions = eigfiles
-
-    targetdir,basename,ext = hk.getBasename(parfile)
-
-    tregions = getTargetRegions( regions, annot )
-
-    evec = read_csv(eigenvec, delim_whitespace=True, header=None, skiprows=[0])
-    evec.index = evec[0].tolist()
-    del evec[0]
-    evec.columns = ["V%d"%x for x in range(1,21)] + ["Region"]
-
-    evecfilt = evec[evec.Region.isin(tregions)]
-
-    #print evec.head()
-    plotlist = []
-    ng = grid.grid.nullGrob()
-    legend = None
-    for pc2 in [2,3,4] :
-        #plotlist.append([])
-        for pc1 in [1,2,3] :
-            if pc1 >= pc2 : plotlist.append(ng); continue
-            p = plotPCA( evecfilt, basename, "V%d"%pc1, "V%d"%pc2 )
-            legend = gtable.gtable_filter(
-                ggplot2.ggplot2.ggplot_gtable(
-                    ggplot2.ggplot2.ggplot_build(p)),"guide-box")
-            plotlist.append(p+ ggplot2.theme(**{'legend.position':"none"}) )
-
-    print plotlist
-    figname = "results/figures/pca/%s_grid_pcs.pdf" % (basename)
-    print "Making figure:",figname
-    ph = 5
-    grdevices.pdf(figname, width=ph+1.5, height=ph)#res=300)
-    #gridextra.grid_arrange( *plotlist , ncol=3 )
-    gridextra.grid_arrange( gridextra.arrangeGrob(*plotlist , ncol=3), legend, nrow=1,
-                                widths=grid.grid.unit_c( grid.unit(ph, "inches"), 
-                                            grid.unit(1.5,"inches")))
-
-    grdevices.dev_off()
-# END plotPCAGrid
 
 ######################################################################
 if __name__ == "__main__":
@@ -594,79 +460,50 @@ if __name__ == "__main__":
     vcffile = "./rawdata/mergedaly/meceu.X.vcf.gz"
     vcffile = "./rawdata/merge1kg/me1000G.X.vcf.gz"
     vcffile = "./rawdata/mevariome/variome.X.vcf.gz"
-    #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
+    vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
-    #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
+    vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
 
-    #bedfile = seriousClean2( vcffile, True )
-    bedfile = seriousClean( vcffile, False )
+    hgdpped = "/home/escott/workspace/variome/resources/hgdppanel4/panel4.ped"
+    hgdpmap = "/home/escott/workspace/variome/resources/hgdppanel4/panel4.map"
+    hgdpids = "/home/escott/workspace/variome/resources/hgdppanel4/sample_panel4.txt"
 
-    print "Bedfile:", bedfile
-    assert os.path.exists(bedfile)
+    bedfile = pop.run_plink_convert(hgdpped)
 
     filepath, filename = os.path.split(bedfile)
     targetdir = os.path.join(filepath,"pca")
+    hk.makeDir( targetdir )
 
-    clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
-    filepats = patientInfo.currentFilePats( vcffile )
-    if os.path.exists(clustfile) :
-        sampleannot = read_csv( clustfile, sep="\t" )
-        sampleannot.index = sampleannot["Individual.ID"]
-        sampleannot = sampleannot.ix[filepats,:]
-        mapping_regions = {
-                   #"NWA":"Middle East", "NEA":"Middle East", "AP":"Middle East",
-                   #"SD":"Middle East", "TP":"Middle East", "CA":"Middle East",
-                   "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
-                   "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
-                   "Europe":"Unknown", "Africa":"Unknown", "East Asia":"East Asia",
-                   "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia"}
+    hgdpannot = read_csv(hgdpids, delim_whitespace=True, header=None, names=["IID","Gender","Region"])
+    hgdpannot.index = hgdpannot["IID"]
+    eigfiles = makeParFile(bedfile, hgdpannot, targetdir=targetdir) 
 
-        sampleannot["Continent2"] = [mapping_regions[x] if mapping_regions.has_key(x)
-                                      else x
-                                      for x in sampleannot.GeographicRegions3]
-    else :
-        sampleannot = sampleAnnotation( filepats )
+    annot = "GeographicRegions3"
+    outliers = pcaAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="4:5" )
 
-    annot = "Continent2"
-    sampleannot["Region"] = sampleannot[annot]
-    targetdir = os.path.join(filepath,"pca/"+annot)
-    #fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
-    #fixedannotname = ("GeographicRegions2" if annot == "GRsub" else annot)
+    sys.exit(1)
+    bedfile = seriousClean( vcffile, hgdpped, hgdpmap, False )
+    filepath, filename = os.path.split(bedfile)
+    targetdir = os.path.join(filepath,"pca")
+    hk.makeDir( targetdir )
 
-    eigfiles = makeParFile(bedfile, sampleannot,targetdir=targetdir)
-                           #annotcol=fixedannotname) 
-    plotPCAGrid( eigfiles )
-    
-    #outliers = pcaOutlierAnalysis( eigfiles, force=True, 
-                                  #annotcol=annot, tcols="1:2" )
-    #print outliers
+    assert os.path.exists(bedfile)
+    print "Bedfile:", bedfile
+    outliers = pcaAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="1:2" )
 
-    
-
-    #gtable_filter(ggplot_gtable(ggplot_build(p1)), "guide-box")
-    #grid.arrange(plots[[1]], ng,         ng,
-                 #plots[[2]], plots[[3]], ng,
-                 #plots[[4]], plots[[5]], plots[[6]])
+    sys.exit(1)
 
     #annotationcolumns = ["GeographicRegions","GeographicRegions2","Country","Continent2","ethnicity","Source"]
     #annotationcolumns = ["GeographicRegions2","GRsub"]
-    #annotationcolumns = ["GeographicRegions","GeographicRegions2"]
-        #for annot in annotationcolumns :
-
-
+    annotationcolumns = ["GeographicRegions","GeographicRegions2"]
+    for annot in annotationcolumns :
+        targetdir = os.path.join(filepath,"pca/"+annot)
+        #fstdata = calcFst( bedfile, targetdir, force=False, annotcol=annot )
+        outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol=annot, tcols="3:4" )
+        print outliers
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=False, annotcol="GeographicRegions" )
     #outliers = pcaOutlierAnalysis( bedfile, targetdir, force=True, annotcol="ethnicity" )
 # END Main
-     #cmd = ('unit.c(unit(2, "lines"), '+
-                        #'unit(1, "npc") - unit(2, "lines") - %s["width"], '+
-                        #'%s["width"]') % (legend.r_repr(), legend.r_repr() )
-#
-    #cmd = u"gtable_filter(ggplot_gtable(ggplot_build(%s)))" % p.r_repr()
-#
-    #cmd = ('unit.c(unit(2, "lines"), unit(1, "npc") - unit(3, "lines"), unit(3, "lines")')
-    #lwidths = robjects.r( cmd )
-    #lwidths = robjects.r( '%s["width"]'% (legend.r_repr()) )
-#
-                 
+                  

@@ -26,12 +26,12 @@ import pandas.rpy.common as com
 from rpy2.robjects.packages import importr
 from rpy2.robjects.lib import grid
 from rpy2.robjects.lib import ggplot2
-from rpy2.robjects.lib import ggplot2
 
 r = robjects.r
 rprint = robjects.globalenv.get("print")
 rstats = importr('stats')
 grdevices = importr('grDevices')
+gtable = importr('gtable',on_conflict="warn")
 gridextra = importr('gridExtra')
 rcolorbrewer = importr('RColorBrewer')
 plyr = importr('plyr')
@@ -126,6 +126,39 @@ pointtheme_nolegend = {
             'strip.text.y':ggplot2.element_text(colour="black",face="bold",size=15,angle=-90),
             'strip.text.x':ggplot2.element_text(colour="black",face="bold",size=15),
             }
+pcatheme = {
+            #'panel.background':ggplot2.element_blank(),
+            'panel.background':ggplot2.element_rect(colour="black", fill="white"),
+            'axis.text':ggplot2.element_blank(),
+            'axis.title':ggplot2.element_text(colour="black",size=15),
+            'plot.title':ggplot2.element_text(face="bold", size=20,colour="black"),
+            'panel.grid.minor':ggplot2.element_blank(),
+            'panel.grid.major':ggplot2.element_blank(),
+            'legend.background':ggplot2.element_blank(),
+            'legend.key':ggplot2.element_blank(),
+            'plot.margin':grid.unit(robjects.IntVector([0,0,0,0]), "lines"), 
+            'axis.ticks':ggplot2.element_blank()
+            }
+
+pcathemesmall = {
+            #'panel.background':ggplot2.element_blank(),
+            'panel.background':ggplot2.element_rect(colour="black", fill="white"),
+            'axis.text':ggplot2.element_blank(),
+            'axis.title':ggplot2.element_text(colour="black",size=10),
+            'plot.title':ggplot2.element_text(face="bold", size=20,colour="black"),
+            'panel.grid.minor':ggplot2.element_blank(),
+            'panel.grid.major':ggplot2.element_blank(),
+            'legend.background':ggplot2.element_blank(),
+            'legend.key':ggplot2.element_blank(),
+            'plot.margin':grid.unit(robjects.IntVector([0,0,0,0]), "lines"), 
+            'axis.ticks':ggplot2.element_blank()
+            }
+
+            #'axis.text.x': ggplot2.element_text(angle = 45, hjust=1, vjust=1),
+            #'strip.text.y':ggplot2.element_text(colour="black",face="bold",size=10,angle=-90),
+            #'strip.text.x':ggplot2.element_text(colour="black",face="bold",size=10),
+            #'legend.position':"none",
+
             #'strip.background':ggplot2.element_rect(colour="white", fill="white")
             #'axis.title':ggplot2.element_blank(),
 
@@ -222,6 +255,9 @@ target_me_ethnicities = (["Bedouin","Adygei","Druze","Mozabite","Palestinian"])
 onekg_ethnicities = (["ASW","CEU","CHB","CHS","CLM","FIN","GBR","IBS",
                       "JPT","LWK","MXL","PUR","TSI","YRI"])
 
+
+target_geographic_regions3 = (["Africa","NWA","NEA","AP","SD","TP","CA","Europe",
+                               "East Asia"]+onekg_ethnicities)
 
 def geographicRegions( sampleannot ):
     fixed = []

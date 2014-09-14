@@ -44,7 +44,7 @@ def run_admixture( targetfile, K, bootstrap=False, forceFlag=False ) :
     if bootstrap :
         command = "admixture -B %s %s" % ( targetfile, K )
     else :
-        command = "admixture -j4 --cv %s %s" % ( targetfile, K )
+        command = "admixture -B -j4 --cv %s %s" % ( targetfile, K )
 
     runout = runCommand( command )
     OUT = open(logfile,"wb")
@@ -131,7 +131,7 @@ def runAdmixtureClustering(bedfile, currK, forceFlag=forceFlag,
 ######################################################################
 # findBestK
 ######################################################################
-def findBestK( targetfile, maxK ) :
+def findBestK( targetfile, maxK, force=False ) :
     write2log( " - Running:"+whoami(), True )
     targetdir, filename, suffix = getBasename(targetfile)
     logfile = "%s/%s_findBestK.%d.log" % (LOGDIR,filename,maxK)
@@ -140,7 +140,7 @@ def findBestK( targetfile, maxK ) :
     errorrates = {}
     qfiles = {}
     for K in range(2,maxK+1) :
-        qfile, runout = run_admixture( targetfile, K )
+        qfile, runout = run_admixture( targetfile, K, forceFlag=force )
         qfiles[K] = qfile
         cverrorsearch = re.search( "CV error \WK=\d+\W+([\.\d]+)", runout )
         cverror = 0
@@ -268,8 +268,8 @@ def reorderComponents(previousadmix, currentadmix, currentK ):
     #cadmix = currentadmix[["K%d"%x for x in range(1,currentK+1)]].to_dict() 
 
     test = previousadmix["K2"]
-    print type(test)
-    print test.head()
+    #print type(test)
+    #print test.head()
 
     targetcolumns = ["K%d"%x for x in range(1,currentK+1)]
     padmix = {K:previousadmix[K].map(float).tolist() 
@@ -328,7 +328,7 @@ def reorderComponents(previousadmix, currentadmix, currentK ):
     #return admix_sort.IID.tolist(), uniqcomps.component
 # END reorderComponents
 
-def readQfile( qfile, annotcol=None ) :
+def readQfile( qfile, sampleannot, annotcol=None ) :
 
     filepath, fullbasename, suffix = getBasename(qfile) 
     basename = fullbasename[:fullbasename.rfind(".")]
@@ -344,7 +344,8 @@ def readQfile( qfile, annotcol=None ) :
 
     alldat = concat([famdf,datadf],axis=1)
     #alldat_melt = melt( alldat, id_vars=["FID","IID","PID","MID","Aff","Gender"])
-    alldat_annot = addSampleAnnotation(alldat, mergecol="IID")
+    #alldat_annot = addSampleAnnotation(alldat, mergecol="IID")
+    alldat_annot = merge(alldat, sampleannot, left_on="IID", right_on="Individual.ID")
     if annotcol is not None :
         alldat_annot = alldat_annot[(alldat_annot[annotcol].notnull()) & 
                                     (alldat_annot[annotcol] != "Unknown")]
@@ -395,9 +396,9 @@ def plotAdmixture( admixdf, K, figbasename, sampleorder=None,
                 ggplot2.theme(**admixtheme) )
 
     #figurename = os.path.join(filepath,basename+"_"+str(K)+".png")
-    figurename = figbasename+"_"+str(K)+".png"
+    figurename = figbasename+"_"+str(K)+".pdf"
     print "Making figure:",figurename
-    grdevices.png(figurename, width=8, height=3,units="in",res=300)
+    grdevices.pdf(figurename, width=7.5, height=2.5)#,units="in",res=300
     p.plot()
     grdevices.dev_off()
     return p
@@ -484,15 +485,15 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
 
     print "MaxK:",maxK
     if maxK < 2: return maxK
-    maxK = min(maxK,14)
+    maxK = min(maxK,12)
     #maxK = min(maxK,4)
-    qfiles,bestK,errorfile = findBestK( bedfile, maxK )
+    qfiles,bestK,errorfile = findBestK( bedfile, maxK, force )
 
     plotErrorRate( errorfile, figbasename )
     print qfiles
 
     # Identify sample order using the "BestK"
-    admixdf, K = readQfile( qfiles[bestK], annotcol )
+    admixdf, K = readQfile( qfiles[bestK], sampleannot, annotcol )
     print hk.dfTable(admixdf[annotcol].tolist())
     sampleorder = orderSamples( admixdf, K, tlevels, annotcol )
 
@@ -501,7 +502,7 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
     prevdata = None
     for K in qfiles : 
         print K, qfiles[K]
-        admixdf, K = readQfile( qfiles[K], annotcol )
+        admixdf, K = readQfile( qfiles[K], sampleannot, annotcol )
         print admixdf[annotcol].unique()
         #sys.exit(1)
         comporder = reorderComponents( prevdata, admixdf, K )
@@ -581,19 +582,45 @@ def getLevels( annotcol, targetvcf ):
         if "Oceania" in levels : levels.remove("Oceania") 
         if "America" in levels : levels.remove("America")
         print levels
+    elif annotcol == "GeographicRegions3" :
+        levels = target_geographic_regions3
     else :
         print "Error: unknown levels for column -",annotcol
         sys.exit(1)
 
     targetpats = patientInfo.getPats( targetvcf )
-    sampleannot = sampleAnnotation(targetpats)
 
-    sampleannot = sampleannot[(sampleannot[annotcol].notnull()) & 
-                                (sampleannot[annotcol] != "Unknown")]
-    sampleannot[annotcol] = [x.strip().replace(" ",".") for x in sampleannot[annotcol]]
+    filepath,fbase,suffix = hk.getBasename(targetvcf)
+    
+    clustannotfile = os.path.join(filepath[:filepath.find("main")+4],"clust",fbase+".annot")
+    if annotcol =="GeographicRegions3":
+        assert os.path.exists(clustannotfile), ("Error: clust annot file not found:"
+                                                +clustannotfile)
+        sampleannot = read_csv(clustannotfile,sep="\t")
+        sampleannot = sampleannot[sampleannot["Individual.ID"].isin(targetpats)]
+        mapping_regions = {
+                   "NWA":"NWA", "NEA":"NEA", "AP":"AP",
+                   "SD":"SD", "TP":"TP", "CA":"CA",
+                   "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
+                   "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
+                   "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
+                   "Anglo-American":"Anglo-American"
+                  }
+        sampleannot["GeographicRegions3"] = [mapping_regions[x] if mapping_regions.has_key(x)
+                                      else "Unknown"
+                                      for x in sampleannot.GeographicRegions3]
+        sampleannot = sampleannot[(sampleannot[annotcol].notnull()) & 
+                                    ~(sampleannot[annotcol].isin(["Unknown","Unknown1","Unknown2"]))]
+
+    else :
+        sampleannot = sampleAnnotation(targetpats)
+        sampleannot = sampleannot[(sampleannot[annotcol].notnull()) & 
+                                    (sampleannot[annotcol] != "Unknown")]
+        sampleannot[annotcol] = [x.strip().replace(" ",".") for x in sampleannot[annotcol]]
 
     finallevels = [x for x in levels if x in sampleannot[annotcol].unique()]
     sampleannot = sampleannot[sampleannot[annotcol].isin(finallevels)]
+
     #keepfiles = sampleannot["Individual.ID"].tolist()
     return finallevels, sampleannot#, keepfiles
 # END getLevels
@@ -667,11 +694,11 @@ if __name__ == "__main__":
     os.chdir("..")
 
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
-    vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
+    #vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
     #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
-    #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
+    vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     print "Using Vcffile:",vcffile
 
     #maxK = 4
@@ -680,7 +707,7 @@ if __name__ == "__main__":
     #assert os.path.exists(bedfile)
     #assert is_int( maxK )
 
-    annotcol="GeographicRegions2"
+    annotcol="GeographicRegions3"
 
     targetvcf = copyToSubDir( vcffile, "admixture" )
     filepath, filename, suffix = getBasename(targetvcf)
@@ -690,11 +717,12 @@ if __name__ == "__main__":
     runpopulations=False
 
     levels, sampleannot = getLevels( annotcol, targetvcf )
+
     if runalldata : 
         keepfile = os.path.join(filepath, filename+".keeppats")
         sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
         bedfile = seriousClean( targetvcf, keepfile, False )
-        admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol )
+        admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol, force=True )
 
     elif runpopulations :
         # Run for all continents separately
