@@ -12,6 +12,7 @@ import subprocess
 import housekeeping as hk
 import popgencommands as pop
 from localglobals import *
+gtable = importr('gtable',on_conflict="warn")
 
 #genotypename: input genotype file (in any format: see ../CONVERTF/README)
 #snpname:      input snp file      (in any format: see ../CONVERTF/README)

@@ -265,6 +265,46 @@ def identifySamplesToKeep( vcffile,toremove="./toremove.txt", force=False) :
     return finalkeepfile
 # END identifySamplesToKeep
 
+def makeXchromFile( tvcffile, keepfile, tchrom="X", force=False ):
+    print "Running makeXchromFile"
+    targetdir, filename, suffix = hk.getBasename(tvcffile)
+    xoutdir = os.path.join(targetdir,"xchrom")
+    xoutprefix = "%s/%s.%s" % (xoutdir, basename, tchrom)
+    xvcffile = xoutprefix+".vcf.gz"
+    if not os.path.exists(xvcffile) :
+        FOUT = open(xoutprefix+".vcf","w")
+        print "Making file",xvcffile
+        FIN = gzip.open(tvcffile)
+        for line in FIN :
+            if line[0] == "#" or line[0] == tchrom :
+                FOUT.write(line)
+
+        FOUT.close()
+        FIN.close()
+        subprocess.call( ["bgzip","-f",xoutprefix+".vcf"] )
+        subprocess.call( ["tabix","-p","vcf",xvcffile] )
+
+
+    pseqfile, outliers = pop.pseq_istats( xvcffile )
+
+    cleanvcf = xoutprefix+".clean.vcf.gz"
+    if not os.path.exists(cleanvcf) :
+        command = ["vcftools","--gzvcf",xvcffile,
+                "--min-alleles","2","--max-alleles","2",
+                "--max-missing","0.95","--keep", keepfile,
+                "--recode","--out",xoutprefix]
+        out = subprocess.check_output( command )
+
+        assert os.path.exists( xoutprefix+".recode.vcf" ), out
+        subprocess.call(['mv',xoutprefix+".recode.vcf",xoutprefix+".clean.vcf"])
+        subprocess.call( ["bgzip","-f",xoutprefix+"clean.vcf"] )
+        subprocess.call( ["tabix","-p","vcf",cleanvcf] )
+
+    #cleanvcffile = pop.run_vcftools_clean( xvcffile, keepfile, xoutprefix, force=force )
+    pseqfile, outliers = pop.pseq_istats( cleanvcffile )
+    sys.exit(1)
+# END makeXchromFile
+
 ################################################################################
 # makeCleanVCF
 ################################################################################
@@ -285,6 +325,8 @@ def makeCleanVCF( vcffile, keepfile=None, toforce=False ) :
     # remove outliers
     keepfile = identifySamplesToKeep( vcffile, force=False ) 
     print "Keep file is:",keepfile
+
+    xvcffile = makeXchromFile( vcffile, keepfile, force=toforce )
 
     #if keepfile is not None :
     print "Fixing vcffile:",vcffile

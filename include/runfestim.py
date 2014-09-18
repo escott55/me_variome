@@ -29,11 +29,11 @@ def vcftools_splitbypop( vcffile, patientannot, force=forceFlag ):
     samples = patientInfo.getPats( vcffile ) 
     assert len(samples) > 0
     samples = [ x for x in samples if x in patientannot["Individual.ID"].tolist() ]
-    annot = patientannot.loc[samples,["Individual.ID","Continent2"]]
+    annot = patientannot.loc[samples,["Individual.ID","Continent3"]]
     #print annot.head(3)
 
     patfiles = {}
-    for region, data in annot.groupby("Continent2") : 
+    for region, data in annot.groupby("Continent3") : 
         if len(data) < 10 : continue
         patfiles[region.replace(" ","_")] = "%s/%s_pats.txt" % (targetdir, region.replace(" ","_"))
         patsfile = os.path.join(targetdir,region.replace(" ","_")+"_pats.txt")
@@ -48,7 +48,8 @@ def vcftools_splitbypop( vcffile, patientannot, force=forceFlag ):
         command = [ "vcftools","--gzvcf",vcffile,
                     "--keep",popfile,
                     "--remove-filtered-all",
-                    "--maf",".005",
+                    "--maf",".001",
+                    "--hwe",".001",
                     "--remove-indels","--min-alleles","2",
                     "--max-alleles","2",
                     "--plink-tped","--out",plinkfile]
@@ -95,7 +96,7 @@ def vcftools_makeplink( vcffile, force=forceFlag ):
 # END vcftools_makeplink
 
 ######################################################################
-# excludeSnps
+# excludeSnps_old
 # Goal - remove variants from dataset that fall 
 # within the same centimorgan
 ################################################################################
@@ -523,6 +524,16 @@ def getMarriageRateAnnot( annotcol="Continent2" ):
                                                        for x in target_geographic_regions2] )] 
         s = subset.groupby("Region",as_index=True).apply(wavg).reset_index()
         s.rename(columns={'Region':annotcol,0:'ConsangPercent'}, inplace=True)
+
+    elif annotcol == "GeographicRegions3" :
+        georegions3 = (["Africa","Europe","East Asia","NWA","NEA",
+                                       "AP","SD","TP","CA"])
+
+        subset = regionmerge[regionmerge.Region.isin( [x.replace("."," ") 
+                                                       for x in georegions3] )] 
+        s = subset.groupby("Region",as_index=True).apply(wavg).reset_index()
+        s.rename(columns={'Region':annotcol,0:'ConsangPercent'}, inplace=True)
+
     else :
         print "Error: Unknown annotation column:", annotcol
         sys.exit(1)
@@ -547,7 +558,7 @@ def getMarriageRateAnnot( annotcol="Continent2" ):
 ################################################################################
 # ibcCountryCorrelation
 ################################################################################
-def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Continent" ):
+def ibcCountryCorrelation( ibcdata, basename, sampleannot, algorithm="plink", annotcol="Continent" ):
     print "Running ibcCountryCorrelation:",basename
 
     #sampleannot = read_csv( "./resources/annotation/patientannotation.ped", sep="\t" )
@@ -555,11 +566,15 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
 
     #print plinkibcdata.head(3)
     #plinkibcdata.columns = ["blank","Family","Individual.ID","Homozygotes","Expected","Nonmissing","F"]
-    print ibcdata.shape
-    #ibcall = merge(ibcdata[["Individual.ID","F"]],sampleannot[["Individual.ID","Continent","Origin","ethnicity"]],how="left",on="Individual.ID")
-    ibcall = addSampleAnnotation(ibcdata[["Individual.ID","F"]],"Individual.ID")
+    #print ibcdata.shape
+    print "Merging with sample annot:",ibcdata.shape,sampleannot.shape
+    ibcall = merge(ibcdata[["Individual.ID","F"]],
+                   sampleannot[["Individual.ID","Origin",annotcol]],
+                   how="left", on="Individual.ID")
+    #ibcall = addSampleAnnotation(ibcdata[["Individual.ID","F"]],"Individual.ID")
 
-    print ibcall.shape
+    print "After merge:",ibcall.shape
+
     ibcall = ibcall[(ibcall[annotcol].notnull()) & (ibcall[annotcol] != "Unknown")]
     ibcall["Type"] = "Plink"
 
@@ -575,15 +590,14 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
                           #(withrates["ConsangPercent"] != "NA")]
     #withrates = merge(withrates, countryrates[["Country","CountryConsangPercent"]], left_on="Origin", right_on="Country", how="inner")
 
-    print "Testing without internal Europeans"
-    withrates = withrates[~((withrates.GeographicRegions == "Europe") & 
-                          (withrates.GeographicRegions2 == "Europe"))]
-
-    withrates = withrates[~((withrates.GeographicRegions == "Africa") & 
-                          (withrates.GeographicRegions2 == "Africa"))]
-    withrates = withrates[~((withrates.GeographicRegions == "East Asia") & 
-                          (withrates.GeographicRegions2 == "East Asia"))]
-    print "finished"
+    #print "Testing without internal Europeans"
+    #withrates = withrates[~((withrates.GeographicRegions == "Europe") & 
+                          #(withrates.GeographicRegions2 == "Europe"))]
+    #withrates = withrates[~((withrates.GeographicRegions == "Africa") & 
+                          #(withrates.GeographicRegions2 == "Africa"))]
+    #withrates = withrates[~((withrates.GeographicRegions == "East Asia") & 
+                          #(withrates.GeographicRegions2 == "East Asia"))]
+    #print "finished"
     withrates.to_csv("results/ibc/%s_%s_%s_ibcrates.txt" %(basename,algorithm,annotcol),
                      sep="\t",index=False)
     #print "Making continent ibcrates file"
@@ -595,14 +609,17 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
     #colmeans.rename(columns={0:"Colmean"},inplace=True)
     colmeans["Label"] = ["%.3f"%x for x in colmeans.F]
     print colmeans.head()
+
     r_dataframe = com.convert_to_r_dataframe(withrates)
     rmeans = com.convert_to_r_dataframe(colmeans)
     r_dataframe = fixRLevels( r_dataframe, annotcol, 
                              regionrates[annotcol].tolist() )
     rmeans = fixRLevels( rmeans, annotcol, 
                              regionrates[annotcol].tolist() )
+
     for col in r_dataframe:
         col.rclass = None
+
     p = (ggplot2.ggplot(r_dataframe) +
                 ggplot2.aes_string(x = "factor("+annotcol+")",y="F" ) +
                 ggplot2.geom_boxplot(ggplot2.aes_string(fill="ConsangPercent"),notch=True) +
@@ -614,7 +631,7 @@ def ibcCountryCorrelation( ibcdata, basename, algorithm="plink", annotcol="Conti
                 ggplot2.scale_fill_continuous("Percent of\nConsanguineous\nMarriages") +
                 ggplot2.theme(**mytheme) )
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
-    #if basename is None : basename = "test"
+
     if basename.find(" ")>=0 : basename = basename.replace(" ","_")
     figname = "results/figures/festim/%s_%s_%s_percent_ibc.png" % (basename,algorithm,annotcol)
     print "Writing file:",figname
@@ -717,9 +734,9 @@ def mergeFEstimFiles( festimfiles, targetfile, patientdata ) :
         #feibcdata = read_csv( festimibc, header=None, sep=r"\s+", names=["Individual","F","StdE","A","StdE2"], dtype={'Individual':str, 'F':float} )
         #feibcdata["Family"] = [x.split("_",1)[0] for x in feibcdata["Individual"].tolist()]
         #feibcdata["Individual.ID"] = [x.split("_",1)[1] for x in feibcdata["Individual"].tolist()]
-        print "Filename:",festimibc
-        print feibcdata.head(3)
-        print [x for x in feibcdata.Individual]
+        #print "Filename:",festimibc
+        #print feibcdata.head(3)
+        #print [x for x in feibcdata.Individual]
         feibcdata["Family"] = [x[:x.rfind("_")] if x.find("_") > 0 else x 
                                for x in feibcdata["Individual"].tolist() ]
         feibcdata["Individual.ID.short"] = [x[x.rfind("_")+1:] for x in feibcdata["Individual"].tolist()]
@@ -729,15 +746,28 @@ def mergeFEstimFiles( festimfiles, targetfile, patientdata ) :
     alldata = concat( alldata )
     alldata_merge = merge( alldata, patientdata, on="Individual.ID.short", how="left" )
     alldata_filt = alldata_merge[["Family.ID","Individual.ID","F","StdE","A","StdE.1","continent","Origin","Ethnicity","ethnicity"]]
-    print alldata_filt[alldata_filt["Family.ID"].isnull()].head(3)
+    #print alldata_filt[alldata_filt["Family.ID"].isnull()].head(3)
     alldata_filt.to_csv( targetfile, sep="\t", index=False )
 # END mergeFEstimFiles 
+
+def isOutlier( x, mean, std ):
+    return abs((x-mean)/std) > 2
+
+def outlieranalysis( hetvals ) :
+    #outliers = []
+    #for cont,sc_sub in samplecounts.groupby("Continent2") :
+    #for vclass in vclasses :
+    mean = hetvals["F"].mean()
+    std = hetvals["F"].std()
+    tokeep = [not isOutlier(x,mean,std) for x in hetvals["F"]]
+    return hetvals[tokeep]
+# END outlieranalysis
 
 ################################################################################
 # mergehetfiles
 ################################################################################
 def mergehetfiles( hetfiles, targetfile, patientdata ) :
-
+    print "Running mergehetfiles"
     shortids = [x[:x.find('_')] if len(x) > 21 and x.find('_') > 0 else x for x in patientdata["Individual.ID"].tolist()]
     patientdata["Individual.ID.short"] = shortids
 
@@ -745,8 +775,11 @@ def mergehetfiles( hetfiles, targetfile, patientdata ) :
     for plinkibc in hetfiles :
         plinkibcdata = read_csv( plinkibc, delim_whitespace=True )#, columns=None
         plinkibcdata.columns = ["Family","Individual.ID.short","Homozygotes","Expected","Nonmissing","F"]
-        print plinkibcdata.head(4)
-        alldata.append(plinkibcdata)
+        newplink = outlieranalysis( plinkibcdata )
+        print "Old:",plinkibcdata.shape, "New:",newplink.shape
+        alldata.append(newplink)
+        #print plinkibcdata.head(4)
+        #alldata.append(plinkibcdata)
 
     alldata = concat(alldata)
     alldata_merge = merge( alldata, patientdata, on="Individual.ID.short", how="left" )
@@ -765,6 +798,7 @@ def calculateIBC( targetfile, patientdata, rerun=False ) :
     # Parse Patient data
     #patientannotation = "./resources/annotation/patientannotation.ped"
     #patientdata = read_csv( patientannotation, sep="\t" )
+    sampleannot = sampleAnnotation()
     filepath, basename, suffix = getBasename( targetfile )
     print filepath, basename, suffix
     targetdir = "%s/ibc/" % filepath
@@ -790,19 +824,20 @@ def calculateIBC( targetfile, patientdata, rerun=False ) :
     hetfiles = []
     festimfiles = []
     for region,ped in pedfiles.iteritems() :
-        print region,ped
+        #print region,ped
         recodefile = plink_recode12( ped, force=rerun )
         print "#"*50
         print "Made recodefile:",recodefile
         # Modify ped
-        modped = modify_ped( recodefile, patientdata, calcdistances=True, shorten=True, force=rerun )
+        modped = modify_ped( recodefile, sampleannot, calcdistances=True, shorten=True, force=rerun )
         bedfile = run_plink_convert(modped, force=rerun)
-        #hetfile = run_plink_het( bedfile, force=rerun )
+        hetfile = run_plink_het( bedfile, force=rerun )
         frqfile = plink_makefrqfile( modped, force=rerun )
         #hapfile = plink_runhaplotyping( modped )
-        newfrq, excludebase = excludeSnps( modped, force=rerun )
-        bedfile = run_plink_convert(excludebase+".ped", force=rerun)
-        hetfile = run_plink_het( bedfile, force=rerun )
+        newfrq, excludebase = excludeSnps( modped, force=rerun)
+        #print newfrq, excludebase
+        #bedfile = run_plink_convert(excludebase+".ped", force=rerun)
+        #hetfile = run_plink_het( bedfile, force=rerun )
         ibcfestim = run_festim( excludebase+".ped", force=rerun )
         hetfiles.append(hetfile)
         festimfiles.append(ibcfestim)
@@ -819,13 +854,13 @@ def calculateIBC( targetfile, patientdata, rerun=False ) :
     filepath, basename, suffix = getBasename( hetfile )
 
     #targetfactors = ["Continent2","country", "GeographicRegions", "GeographicRegions2"]
-    targetfactors = ["GeographicRegions"]
+    targetfactors = ["GeographicRegions3"]
     for factor in targetfactors :
         #plotPlinkIBC( hetfile, patientdata, factor )
         #plotIBC( ibcfestim, patientdata, factor )
         #ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
-        ibcCountryCorrelation( plinkibcdata, basename, "plink", factor )
-        #ibcCountryCorrelation( festimibcdata, basename, "festim", factor )
+        ibcCountryCorrelation( plinkibcdata, basename, patientdata, "plink", factor )
+        ibcCountryCorrelation( festimibcdata, basename, patientdata, "festim", factor )
 
     return recodefile
 # End calculateIBC
@@ -949,9 +984,22 @@ if __name__ == "__main__" :
     #targetpats = patientInfo.getPats( vcffile )
     filepats = patientInfo.currentFilePats( vcffile )
     if os.path.exists(clustfile) :
+        print "Using clustfile:",clustfile
         sampleannot = read_csv( clustfile, sep="\t" )
         sampleannot.index = sampleannot["Individual.ID"]
         sampleannot = sampleannot.ix[filepats,:]
+        mapping_regions = {"NWA":"Middle East", "NEA":"Middle East", "AP":"Middle East",
+                           "SD":"Middle East", "TP":"Middle East", "CA":"Middle East",
+                           "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
+                           "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
+                           "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
+                           "Anglo-American":"Anglo-American"
+                          }
+
+        sampleannot["Continent3"] = [mapping_regions[x] if mapping_regions.has_key(x)
+                                      else "Unknown"
+                                      for x in sampleannot.GeographicRegions3]
+
         mapping_regions = {"NWA":"NWA", "NEA":"NEA", "AP":"AP",
                            "SD":"SD", "TP":"TP", "CA":"CA",
                            "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
@@ -959,9 +1007,10 @@ if __name__ == "__main__" :
                            "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
                            "Anglo-American":"Anglo-American"
                           }
-        sampleannot["Continent2"] = [mapping_regions[x] if mapping_regions.has_key(x)
+        sampleannot["GeographicRegions3"] = [mapping_regions[x] if mapping_regions.has_key(x)
                                       else "Unknown"
                                       for x in sampleannot.GeographicRegions3]
+
     else :
         sampleannot = sampleAnnotation( filepats )
 

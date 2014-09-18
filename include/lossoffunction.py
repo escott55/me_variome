@@ -328,7 +328,7 @@ def psiIntersect( vardata, psiannotatedfile, force=False ) :
         if len(tregions) == 1 :
             psivals.append( tregions["Global-PSI"].tolist()[0] )
         elif len(tregions) > 1 :
-            print "warning: more than one match"
+            #print "warning: more than one match"
             if gene in tregions.Gene.tolist() :
                 psivals.append( tregions[tregions.Gene == gene]["Global-PSI"].tolist()[0] )
             else :
@@ -679,8 +679,9 @@ if __name__ == "__main__" :
     # Make X
     #varfile = "/media/data/workspace/variome/rawdata/test/everything_set1.chr1.snp_genes.tsv"
     #varfile = "/media/data/workspace/variome/rawdata/test2/main/test2.clean_genes.tsv"
-    #varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
-    varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/classify/me1000G.clean.sfilt_genes.tsv"
+    varfile = "/media/data/workspace/variome/rawdata/mevariome/main/variome.clean_genes.tsv"
+    #varfile = "/media/data/workspace/variome/rawdata/merge1kg/main/classify/me1000G.clean.sfilt_genes.tsv"
+    varfile = "/media/data/workspace/variome/results/other/merged_genes.tsv"
 
     currconfig = 3
 

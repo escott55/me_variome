@@ -31,7 +31,7 @@ r = robjects.r
 rprint = robjects.globalenv.get("print")
 rstats = importr('stats')
 grdevices = importr('grDevices')
-gtable = importr('gtable',on_conflict="warn")
+#gtable = importr('gtable',on_conflict="warn")
 gridextra = importr('gridExtra')
 rcolorbrewer = importr('RColorBrewer')
 plyr = importr('plyr')
@@ -65,6 +65,7 @@ mytheme = {
             'plot.title':ggplot2.element_text(face="bold", size=20,colour="black"),
             'panel.grid.minor':ggplot2.element_blank(),
             'panel.grid.major':ggplot2.element_blank(),
+            'legend.key':ggplot2.element_blank(),
             'strip.text.y':ggplot2.element_text(colour="black",face="bold",size=15),
             'strip.text.x':ggplot2.element_text(colour="black",face="bold",size=15)
             }
@@ -89,7 +90,7 @@ admixtheme = {
             'panel.grid.major':ggplot2.element_blank(),
             'panel.grid.minor':ggplot2.element_blank(),
             'legend.position':"none",
-            'strip.text.x':ggplot2.element_text(size=6, colour="black",angle=0),
+            'strip.text.x':ggplot2.element_text(size=10, face="bold", colour="black",angle=0),
             'strip.text.y':ggplot2.element_text(size=12, face="bold", colour="black"),
             'strip.background':ggplot2.element_rect(colour="white", fill="white"),
             'axis.ticks':ggplot2.element_blank()
@@ -198,6 +199,13 @@ region2countries = ({'East Asia':['China','Japan'],
                                            'Oman','Bahrain','Kuwait'],
                      'Syrian Desert':['Iraq','Syria','Jordan','Lebanon','Palestine'],
                      'Central Asia':['Iran','Afghanistan','Pakistan'],
+                     'NEA':['Egypt','Libya'],
+                     'TP':['Turkey'],
+                     'NWA':['Algeria','Morocco','Tunisia'],
+                     'AP':['Saudi Arabia','United Arab Emirates','UAE','Yemen',
+                                           'Oman','Bahrain','Kuwait'],
+                     'SD':['Iraq','Syria','Jordan','Lebanon','Palestine'],
+                     'CA':['Iran','Afghanistan','Pakistan'],
                      'TSI':['Italy'],
                      'IBS':['Spain'],
                      'GBR':['UK','England'],

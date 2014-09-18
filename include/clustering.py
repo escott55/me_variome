@@ -213,7 +213,7 @@ def seriousClean( vcffile, rerun=False ):
                "--remove-filtered-all",
                "--remove-indels",
                "--maf","0.001",
-               "--hwe","0.001",
+               #"--hwe","0.001",
                "--min-alleles","2",
                "--max-alleles","2",
                "--plink-tped","--out",cleanped]
@@ -265,7 +265,6 @@ if __name__ == "__main__":
     #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     #vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
     vcffile = "./rawdata/mergedaly/meceu.X.vcf.gz" 
-    vcffile = "./rawdata/merge1kg/me1000G.X.vcf.gz"
     vcffile = "./rawdata/mevariome/variome.X.vcf.gz"
     vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
     #vcffile = "./rawdata/mevariome/variome.vcf.gz"
@@ -276,6 +275,9 @@ if __name__ == "__main__":
     vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
     
+    #vcffile = "./rawdata/merge1kg/xchrom/me1000G.X.vcf.gz"
+    vcffile = "./rawdata/mevariome/xchrom/variome.X.clean.vcf.gz"
+
     #bedfile = seriousClean2( vcffile, True )
 
     if vcffile.find("daily") : nclust = 2

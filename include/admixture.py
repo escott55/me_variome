@@ -44,7 +44,7 @@ def run_admixture( targetfile, K, bootstrap=False, forceFlag=False ) :
     if bootstrap :
         command = "admixture -B %s %s" % ( targetfile, K )
     else :
-        command = "admixture -B -j4 --cv %s %s" % ( targetfile, K )
+        command = "admixture -j4 --cv %s %s" % ( targetfile, K )
 
     runout = runCommand( command )
     OUT = open(logfile,"wb")
@@ -194,7 +194,7 @@ def mergeVcfs( path, filelist, targetfile ) :
 # parseSampleGroups
 # annotfile="./resources/annotation/patientannotation.ped"
 ######################################################################
-def parseSampleGroups( bedfile, patientdata ) :
+def parseSampleGroups( bedfile, patientdata, annotcol ) :
 
     filepath, basename, suffix = getBasename( bedfile )
     famfile = "%s/%s.fam" % (filepath,basename)
@@ -208,7 +208,7 @@ def parseSampleGroups( bedfile, patientdata ) :
 
     #print pats[:10]
     pats = DataFrame( pats, columns=["Individual.ID"])
-    groups = merge(pats, patientdata[["Individual.ID","ethnicity"]], on="Individual.ID", how="left")
+    groups = merge(pats, patientdata[["Individual.ID",annotcol]], on="Individual.ID", how="left")
     #print groups.head(10)
     return groups
 # END parseSampleGroups
@@ -438,12 +438,13 @@ def plotAllAdmixture( admixdf, maxK, figbasename, sampleorder=None,
                 #ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)}) +
 
     #figurename = os.path.join(filepath,basename+"_"+str(K)+".png")
-    figurename = figbasename+"_all2.png"
+    figurename = figbasename+"_all2.pdf"
     print "Making figure:",figurename
-    grdevices.png(figurename, width=8, height=1*maxK,units="in",res=300)
+    #grdevices.png(figurename, width=8, height=1*maxK,units="in",res=300)
+    grdevices.pdf(figurename, width=7.5, height=.9*maxK)
     p.plot()
     grdevices.dev_off()
-    return p
+    #return p
 # END plotAllAdmixture
 
 def plotErrorRate( errorfile, figbasename ) :
@@ -478,10 +479,10 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
     #print "Annotfile",annotfile
     #assert os.path.exists( annotfile )
     if maxK is None :
-        groups = parseSampleGroups( bedfile, sampleannot )
+        groups = parseSampleGroups( bedfile, sampleannot, annotcol )
         #maxK = len(uniqify(groups))
-        maxK = len(groups["ethnicity"].unique().tolist())
-        #print "Groups",len(groups),"Max K:",maxK
+        maxK = len(groups[annotcol].unique().tolist())
+        print "Groups",len(groups),"Max K:",maxK
 
     print "MaxK:",maxK
     if maxK < 2: return maxK
@@ -504,7 +505,6 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
         print K, qfiles[K]
         admixdf, K = readQfile( qfiles[K], sampleannot, annotcol )
         print admixdf[annotcol].unique()
-        #sys.exit(1)
         comporder = reorderComponents( prevdata, admixdf, K )
         admixdf.rename(columns=comporder,inplace=True)
         admixdf_melt = melt( admixdf, id_vars=["IID",annotcol], 
@@ -521,7 +521,7 @@ def admixtureAnalysis( bedfile, sampleannot, tlevels, maxK=None,
 
     #qfile,runout = run_admixture( bedfile, bestK, True, forceFlag )
 
-    runAdmixtureClustering(bedfile,bestK,True)
+    #runAdmixtureClustering(bedfile,bestK,True)
     return bestK
 # End admixtureAnalysis
     #figurename = bedfile[:-4]+"_all.png"
@@ -539,6 +539,7 @@ def seriousClean( vcffile, keepfile=None, rerun=False ):
                "--remove-filtered-all",
                "--remove-indels",
                "--maf",".005",
+               "--hwe",".005",
                "--min-alleles","2",
                "--max-alleles","2",
                "--plink-tped","--out",cleanped]
@@ -583,7 +584,7 @@ def getLevels( annotcol, targetvcf ):
         if "America" in levels : levels.remove("America")
         print levels
     elif annotcol == "GeographicRegions3" :
-        levels = target_geographic_regions3
+        levels = ["Africa","NWA","NEA","AP","SD","TP","CA","Europe","Anglo-American","East.Asia"]
     else :
         print "Error: unknown levels for column -",annotcol
         sys.exit(1)
@@ -603,7 +604,7 @@ def getLevels( annotcol, targetvcf ):
                    "SD":"SD", "TP":"TP", "CA":"CA",
                    "LWK":"Africa", "YRI":"Africa", "IBS":"Europe", "CEU":"Europe",
                    "TSI":"Europe", "FIN":"Europe", "GBR":"Europe",
-                   "CHB":"East Asia", "CHS":"East Asia", "JPT":"East Asia",
+                   "CHB":"East.Asia", "CHS":"East.Asia", "JPT":"East.Asia",
                    "Anglo-American":"Anglo-American"
                   }
         sampleannot["GeographicRegions3"] = [mapping_regions[x] if mapping_regions.has_key(x)
@@ -618,6 +619,7 @@ def getLevels( annotcol, targetvcf ):
                                     (sampleannot[annotcol] != "Unknown")]
         sampleannot[annotcol] = [x.strip().replace(" ",".") for x in sampleannot[annotcol]]
 
+    print "Before levels:",levels
     finallevels = [x for x in levels if x in sampleannot[annotcol].unique()]
     sampleannot = sampleannot[sampleannot[annotcol].isin(finallevels)]
 
@@ -696,6 +698,7 @@ if __name__ == "__main__":
     #vcffile = "./rawdata/test2/main/test2.clean.vcf.gz"
     #vcffile = "./rawdata/daily/main/daily.clean.vcf.gz"
     #vcffile = "./rawdata/mevariome/main/variome.clean.vcf.gz"
+    #vcffile = "./rawdata/merge1kg/main/me1000G.X.vcf.gz"
     #vcffile = "./rawdata/onekg/main/onekg.clean.vcf.gz"
     #vcffile = "./rawdata/mergedaly/main/meceu.clean.vcf.gz"
     vcffile = "./rawdata/merge1kg/main/me1000G.clean.vcf.gz"
@@ -717,12 +720,15 @@ if __name__ == "__main__":
     runpopulations=False
 
     levels, sampleannot = getLevels( annotcol, targetvcf )
+    #print levels
+    #print sampleannot
+    #sys.exit(1)
 
     if runalldata : 
         keepfile = os.path.join(filepath, filename+".keeppats")
         sampleannot[["Individual.ID"]].to_csv(keepfile, header=None,index=None)
         bedfile = seriousClean( targetvcf, keepfile, False )
-        admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol, force=True )
+        admixtureAnalysis( bedfile, sampleannot, levels, annotcol=annotcol, force=False )
 
     elif runpopulations :
         # Run for all continents separately

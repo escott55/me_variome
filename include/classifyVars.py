@@ -594,8 +594,9 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
             continue
 
         chrom,pos,dbsnp,ref,mut,qual,passed = row[:7]
-        #print "chrom",chrom,"pos",pos
+        if chrom == "Y" : break
 
+        #print "chrom",chrom,"pos",pos
         if openannotation != chrom : 
             print "Opening new annot file: chr",chrom
             annotation = read_csv( chromfiles[chrom], sep="\t", low_memory=False )
@@ -1427,6 +1428,7 @@ def runClassifyWorkflow( vcffile, sampleannot, regionlist, figuredir ):
     
     samplecounts = individualVarStats( cleanvcf, geneannotfile, 
                               sampleannot, regionlist, filepats, force=True)
+
     #plotSampleCounts2( samplecounts, outdir=figuredir )
     #if cleanvcf.find("meceu") >= 0 : 
         #regionlist = ["Europe","Middle East"]
@@ -1474,7 +1476,8 @@ if __name__ == "__main__" :
         vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
         clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
     elif dataset == "mevariome" :
-        vcffile = path+"/mevariome/variome.vcf.gz"
+        vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
+        #vcffile = path+"/mevariome/variome.vcf.gz"
         clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
         #vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
     elif dataset == "mergedaly" :
@@ -1508,6 +1511,7 @@ if __name__ == "__main__" :
                                       for x in sampleannot.GeographicRegions3]
     else :
         sampleannot = sampleAnnotation( filepats )
+
 
     print sampleannot.head()
     regionlist = sorted(sampleannot[sampleannot.Continent2.notnull()]
