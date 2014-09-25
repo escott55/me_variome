@@ -144,7 +144,7 @@ def plotSampleCounts( samplecounts, outdir="./results/figures/varcounts", force=
 
     plotHomozygosity( samplecounts, outdir, basename )
 
-    vclasses = ["Class1","Class2","Class3","Class4"]#,"Class5"
+    vclasses = ["Class0","Class1","Class2","Class3","Class4"]#,"Class5"
     scounts = melt(samplecounts,id_vars=["Sample","Region","GeographicRegions","Source"],
                   value_vars=vclasses)
 
@@ -156,7 +156,7 @@ def plotSampleCounts( samplecounts, outdir="./results/figures/varcounts", force=
 def isOutlier( x, mean, std ):
     return abs((x-mean)/std) > 3
 
-def lrVarClassPlots( varcounts, dataset ):
+def lrVarClassPlots( varcounts, dataset, tcol="Continent3" ):
     #vcounts = melt( varcounts_merge, 
                    #id_vars=["Individual.ID","percent"],
                    #value_vars=["benignroh","benignnonroh","delroh","delnonroh"])
@@ -164,7 +164,10 @@ def lrVarClassPlots( varcounts, dataset ):
     #vcounts["vtype"] = ["Benign" if x.find("benign") == 0 else "Deleterious" for x in vcounts.variable]
 
     #vcounts_annot = addSampleAnnotation( vcounts, mergecol="Individual.ID" )
-    vcounts = varcounts[ varcounts.Continent2.isin(["Europe","Middle East"]) ]
+    #vcounts = varcounts[ varcounts[tcol].isin(["Europe","Middle East","Anglo-American", "Africa"]) ]
+    #vcounts = varcounts[ varcounts[tcol].isin(["Middle East","Anglo-American","Europe","Africa"]) ]
+    vcounts = varcounts[ varcounts[tcol].isin(["Middle East","Anglo-American"]) ]
+    #vcounts = varcounts[ varcounts[tcol].isin(["TP","SD","NWA","NEA","AP","CA"]) ]
     #print vcounts_annot.head()"Africa","Europe","Middle East"
 
     #mean = vcounts["Class1"].mean()
@@ -174,38 +177,40 @@ def lrVarClassPlots( varcounts, dataset ):
     #vcounts = vcounts[[not x for x in sdout]]
 
     lmdata = []
-    for idx, grp in vcounts.groupby(["Continent2","tclass"]) :
-        lm = stats.linregress( grp["Class1"].tolist(), grp["Vcount"].tolist() )
-        lmdata.append( Series(data=idx+lm, index=["Continent2","tclass","slope",
+    for idx, grp in vcounts.groupby([tcol,"tclass"]) :
+        lm = stats.linregress( grp["Class0"].tolist(), grp["Vcount"].tolist() )
+        lmdata.append( Series(data=idx+lm, index=[tcol,"tclass","slope",
                                                  "intercept", "rval", "pval", "stderr"]) )
     
     lmdata = DataFrame(lmdata)
 
-    lmdata["xpos"] = vcounts.Class1.min()
+    lmdata["xpos"] = vcounts.Class0.min()
 
     for idx, subdata in lmdata.groupby("tclass"): 
         maxY = vcounts[vcounts.tclass==idx]["Vcount"].max()
         lmdata.loc[lmdata.tclass==idx,"ypos"] = [maxY*(1.-.04*(i))
-                                                 for i in range(1,len(subdata.Continent2)+1)]
+                                                 for i in range(1,len(subdata[tcol])+1)]
 
     lmdata["Slope"] = ["%s Slope: %.3f" % (x,y) 
-                       for x,y in lmdata[["Continent2","slope"]].values]
+                       for x,y in lmdata[[tcol,"slope"]].values]
 
     print lmdata
     r_dataframe = com.convert_to_r_dataframe(vcounts)
     r_lm = com.convert_to_r_dataframe(lmdata)
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x="Class1", y="Vcount", colour="factor(Continent2)")+
+                ggplot2.aes_string(x="Class0", y="Vcount", colour="factor("+tcol+")")+
                                    #group="factor(tclass)", colour="factor(tclass)") +
-                ggplot2.geom_point(alpha=.3) +
+                ggplot2.geom_point(alpha=.6) +
                 ggplot2.geom_abline(ggplot2.aes_string(intercept="intercept",slope="slope", 
-                                                       colour="Continent2"),
+                                                       colour=tcol),
                                      data=r_lm) +
                 ggplot2.geom_text(ggplot2.aes_string(label="Slope",x="xpos",y="ypos"),
                                   color="black", size=4, hjust=0, vjust=0, data=r_lm) +
                 ggplot2.scale_y_continuous("Burden of Damaging Variants") +
                 ggplot2.scale_x_continuous("Benign variant burden") +
-                ggplot2.scale_colour_brewer("Continent",palette="Set1") +
+                ggplot2.scale_colour_brewer("Region",palette="Set1") +
+                ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45),
+                                                         'legend.position':'top'}) +
                 #ggplot2.scale_colour_manual(name="Variant Location",
                                             #values=robjects.StrVector(["red","blue"]),
                                             #breaks=robjects.StrVector(["benignroh","benignnonroh"]),
@@ -217,7 +222,7 @@ def lrVarClassPlots( varcounts, dataset ):
                 #ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 90)}) +
                 #ggplot2.ggtitle("Benign Variant counts within\nRuns of Homozygosity") +
 
-    figname = "results/figures/varcounts/%s_lr_varcounts.pdf" % (dataset)
+    figname = "results/figures/varcounts/%s_%s_lr_varcounts.pdf" % (dataset,tcol)
     print "Writing file:",figname
     grdevices.pdf(figname)
     p.plot()
@@ -242,6 +247,9 @@ if __name__ == "__main__":
     clustfile = "./rawdata/mevariome/main/clust/variome.clean.annot"
     samplecountsfile = "./rawdata/merge1kg/main/classify/me1000G.clean.sfilt_indiv.tsv"
     clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
+
+    samplecountsfile = "./results/other/merged_indiv.tsv"
+    clustfile = "./results/other/merged.annot"
     #samplecountsfile = "./rawdata/mergedaly/main/meceu.clean_indiv.tsv"
 
     filepath, basename, ext = hk.getBasename( samplecountsfile )
@@ -257,7 +265,7 @@ if __name__ == "__main__":
                            "LWK":"Africa", "YRI":"Africa", "IBS":"Europe",
                            "CEU":"Europe", "TSI":"Europe", "FIN":"Europe",
                            "GBR":"Europe", "CHB":"East Asia", "CHS":"East Asia",
-                           "JPT":"East Asia"}
+                           "JPT":"East Asia", "Anglo-American":"Anglo-American"}
         samplecounts["Continent3"] = [mapping_regions[x] if mapping_regions.has_key(x) 
                                       else "Unknown"
                                       for x in samplecounts.GeographicRegions3]
@@ -266,7 +274,7 @@ if __name__ == "__main__":
 
     #print samplecounts.head()
 
-    vclasses = ["Class1","Class2","Class3","Class4"]#,"Class5"
+    vclasses = ["Class0","Class1","Class2","Class3","Class4"]#,"Class5"
     for vclass in vclasses :
         samplecounts[vclass] = (samplecounts[vclass+"_het"] +
                                 samplecounts[vclass+"_hom"])
@@ -286,11 +294,14 @@ if __name__ == "__main__":
     #plotSampleCounts( samplecounts )
     print hk.dfTable( samplecounts.Continent2 )
 
-    vclasses = ["Class2","Class3","Class4"]
-    varcounts = melt(samplecounts,id_vars=["Sample","Continent2","GeographicRegions","Source","Class1"],
+    print samplecounts.head()
+    vclasses = ["Class1","Class2","Class3","Class4"]
+    varcounts = melt(samplecounts,id_vars=["Sample","Continent3","GeographicRegions3","Source","Class0"],
                   value_vars=vclasses)
     varcounts.rename(columns={"variable":"tclass", "value":"Vcount"},inplace=True)
+    #print hk.dfTable( varcounts.tclass )
 
-    lrVarClassPlots( varcounts, dataset )
+    lrVarClassPlots( varcounts, dataset, tcol="GeographicRegions3" )
+    lrVarClassPlots( varcounts, dataset, tcol="Continent3" )
 
 # END MAIN

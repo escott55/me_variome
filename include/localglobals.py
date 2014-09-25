@@ -46,11 +46,20 @@ utils = importr('utils')
 
 def makeLargePalette(ncols=12) :
     set1cols = list(rcolorbrewer.brewer_pal(9,"Set1"))
-    set3cols = list(rcolorbrewer.brewer_pal(12,"Set3"))
     set2cols = list(rcolorbrewer.brewer_pal(8,"Set2"))
+    set3cols = list(rcolorbrewer.brewer_pal(12,"Set3"))
     allcols = set1cols+set2cols+set3cols
     return robjects.StrVector(allcols[:ncols])
 # END makeLargePalette
+
+def makeLargePalette2(ncols=12) :
+    set1cols = list(rcolorbrewer.brewer_pal(3,"Set1"))
+    set2cols = list(rcolorbrewer.brewer_pal(8,"Set2"))
+    set3cols = list(rcolorbrewer.brewer_pal(12,"Set3"))
+    allcols = set1cols+set2cols+set3cols
+    return robjects.StrVector(allcols[:ncols])
+# END makeLargePalette
+
 
 #print robjects.r('packageVersion("ggplot2")')
 

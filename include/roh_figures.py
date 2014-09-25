@@ -200,7 +200,6 @@ def percentDensity( allbases, sampleannot, figureprefix=None ) :
     grdevices.png(figname)
     p.plot()
     grdevices.dev_off()
-
 # END percentDensity
 
 ################################################################################

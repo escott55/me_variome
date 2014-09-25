@@ -6,6 +6,7 @@
 import os, sys
 import getopt
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from scipy.stats import ttest_ind
 from scipy.stats import gaussian_kde
 
 #import gzip
@@ -43,7 +44,7 @@ def getLevels( annotcol, sampleannot ):
     print sampleannot.head()
     sampleannot = sampleannot[(sampleannot[annotcol].notnull()) &
                                 (sampleannot[annotcol] != "Unknown")]
-    sampleannot[annotcol] = [x.strip().replace("."," ") for x in sampleannot[annotcol]]
+    sampleannot.loc[:,annotcol] = [x.strip().replace("."," ") for x in sampleannot[annotcol]]
     #print "Before bs filtering:", hk.dfTable( sampleannot[annotcol] )
     finallevels = [x for x in levels if x in sampleannot[annotcol].unique()]
     print "Final levels:",finallevels
@@ -58,27 +59,37 @@ def plotSingletons( singletons, sampleannot, targetdir, prefix="test",
     print "Running plotSingletons"
     singletons.loc[:,"count"] = singletons["count"].astype(int)
 
+    print singletons.head()
+
+    pvals = calcPairwisePvalues_ttest( singletons, "Vtype", 
+                                      regioncol="Continent2", valuecol="count" )
+    pvals.x = "Middle East"
+    print "Pvalues:"
+    print pvals
+
     tlevels, sannot = getLevels( factor, sampleannot )
     singletons_sub = singletons[singletons[factor].isin(tlevels)] 
-    print tlevels
     r_dataframe = com.convert_to_r_dataframe(singletons_sub)
     r_dataframe = fixRLevels( r_dataframe, factor, tlevels )
+    r_pvals = com.convert_to_r_dataframe(pvals)
     p = (ggplot2.ggplot(r_dataframe) +
-                ggplot2.aes_string(x = "factor("+factor+")",y="count",fill="factor(Continent2)" ) +
-                ggplot2.geom_boxplot() +
-                ggplot2.ggtitle("Singletons by "+factor.capitalize()) +
+                ggplot2.aes_string(x = "factor("+factor+")",y="count" ) +
+                ggplot2.geom_boxplot(notch=True) +
+                ggplot2.geom_text(ggplot2.aes_string(label="Pvalue", x="x", y="y"),
+                                    hjust=0, vjust=1, data = r_pvals ) + #size=7,
+                #ggplot2.ggtitle("Singletons by "+factor.capitalize()) +
                 ggplot2.theme(**{'axis.text.x': ggplot2.element_text(angle = 45)})  +
                 ggplot2.scale_y_continuous("Variant count") +
-                ggplot2.scale_x_discrete(string.capitalize(factor)) +
+                ggplot2.scale_x_discrete("") +
                 ggplot2.theme(**pointtheme_nolegend) +
                 ggplot2.facet_grid( robjects.Formula('Vtype ~ .'), scale="free") )
                 #ggplot2.geom_boxplot(ggplot2.aes_string(fill="Continent")) \
-                 #, notch=True ) + \
+                 #, notch=True ) + \ string.capitalize(factor)
 
     figname = "%s/%s_%s_singletons.pdf" % (targetdir,prefix,factor)
     print "Writing file:",figname
     #grdevices.png(figname)
-    grdevices.pdf(figname,width=4,height=8)
+    grdevices.pdf(figname,width=4,height=7)
     p.plot()
     grdevices.dev_off()
 # END plotSingletons
@@ -125,7 +136,7 @@ def sumAF( regiondat ) :
         ref += a
         het += b
         hom += c
-    return (1.*hom+het) / (1.*(ref+het+hom))
+    return (2.*hom+het) / (2.*(ref+het+hom))
 # END sumAF
 
 def mergeGeneFiles( tfiles, force=False ) :
@@ -185,24 +196,27 @@ def mergeGeneFiles( tfiles, force=False ) :
             #print idx, region
 
 
-def calcPairwisePvalues_ttest( tdf, groupcol ) :
+def calcPairwisePvalues_ttest( tdf, groupcol, regioncol="region", valuecol="AF" ) :
     print "Running calcPairwisePvalues"
 
     pvals = []
     for grp, subdf in tdf.groupby([groupcol]):
         #s = pairwise_tukeyhsd(subdf[factcol], subdf.region)
-        data1 = subdf[subdf.region == "Middle East"].AF
-        data2 = subdf[subdf.region == "Anglo-American"].AF
-        maxX = subdf.AF.max()
-        f_value, p_value = stats.f_oneway(data1, data2)
-        pvals.append( Series(data=[grp,p_value,f_value,maxX,200],
-                             index=[groupcol,"pvalue","F-value","x","y"]))
+        data1 = subdf[subdf[regioncol] == "Middle East"][valuecol]
+
+        data2 = subdf[subdf[regioncol] == "Anglo-American"][valuecol]
+        maxX = subdf[valuecol].max()
+        maxY = subdf[valuecol].max()
+        #f_value, p_value = stats.f_oneway(data1, data2)
+        ts, pv = ttest_ind( data1, data2 )
+        pvals.append( Series(data=[grp,pv,ts,0,maxY],
+                             index=[groupcol,"pvalue","T-statistic","x","y"]))
     pvals = DataFrame(pvals)
-    pvals["Pvalue"] = ["P-value: %.3g\nF: %.2f" %(x,y) 
-                       for x,y in pvals[["pvalue","F-value"]].values]
+    pvals["Pvalue"] = ["P-value: %.3g\nT: %.2f" %(x,y) 
+                       for x,y in pvals[["pvalue","T-statistic"]].values]
     print pvals.head()
     return pvals
-# END calcPairwisePvalues
+# END calcPairwisePvalues_ttest
 
 def calcPairwisePvalues_density( tdf, groupcol, valuecol="cdf" ) :
     print "Running calcPairwisePvalues"
@@ -228,7 +242,7 @@ def calcAF(genecounts):
     if type(genecounts) != str and math.isnan(genecounts) : return 0
     ref,het,hom = [int(x) for x in genecounts.split(":")]
     if ref+het+hom == 0 : return 0. #print "Err:",genecounts; 
-    return (1.*hom+het) / (1.*(ref+het+hom))
+    return (2.*hom+het) / (2.*(ref+het+hom))
 # END calcAF
 
 def mergeIndivFiles( tfiles, force=False ):
@@ -456,6 +470,80 @@ def plotClassDist( genefile, regionlist, outdir="./results/figures/singletons", 
     sys.exit(1)
 # END plotClassDist
 
+def parseRegionCounts( rlist ) :
+    #allref,allhet,allhom = (0,0,0)
+    allcounts = []
+    for region, regc in rlist.iteritems() :
+        ref,het,hom = regc.split(":")
+        s = Series({"Region":region,"ref":ref,"het":het,"hom":hom})
+        allcounts.append(s)
+
+    allcounts = DataFrame(allcounts)
+    return allcounts
+# END parseRegionCounts
+
+################################################################################
+def singletonWorkflow2( genefile, sampleannot ) :
+    print "Running singletonWorkflow"
+
+    tregions = ["Africa","Anglo-American","Middle East"]
+    singletons = []
+    nline = 0
+    header = []
+    for row in csv.reader( open(genefile), delimiter="\t" ) :
+        if nline == 0 : header = row
+        nline += 1
+        s = Series( data=rwo, index=header )
+        if s.AF > .1 : continue
+        allcounts = parseRegionCounts( s[tregions] )
+        if allcounts.het.sum() + allcounts.hom.sum() > 1 : continue
+        if allcounts.het.sum() == 1 :
+            print "found singletons!"
+
+
+    #for grp, row in tfiles.iterrows() :
+        #print grp
+        ##if grp == "onekg" : continue
+        #singles = readSingletonFile( row["singletons"], row["genes"] )
+        #singletons.append( singles )
+
+    #singletons = concat( singletons )#, singles3
+
+    singleton_counts = DataFrame({'count': singletons.groupby(["INDV","Vtype"])
+                                  .size()}).reset_index()
+
+    #singleton_counts = addSampleAnnotation( singleton_counts , "INDV" )
+    singleton_counts = merge( singleton_counts, sampleannot, left_on="INDV",
+                             right_on="Individual.ID" )
+
+    singleton_counts["Vtype"] = ["Singleton" if x == "S" else "Doubleton" 
+                                 for x in singleton_counts.Vtype]
+    
+    tregions = ["Anglo-American","Europe","Northeast Africa","Northwest Africa",
+                "Arabian Peninsula","Turkish Peninsula","Syrian Desert",
+                "Central Asia","Africa"]
+
+    print hk.dfTable(singleton_counts.Continent2)
+    print singleton_counts.columns
+    print singleton_counts.head()
+
+    scounts = singleton_counts[(singleton_counts.Continent2.notnull()) &
+                                    (singleton_counts.Continent2 != "Unknown")]
+                                    #(singleton_counts.GeographicRegions.isin(tregions))]
+
+    outliers = scounts.sort("count",ascending=False).head(15)["INDV"]
+    scounts = scounts[~(scounts.INDV.isin(outliers))]
+    targetdir = "results/figures/singletons"
+    prefix = "merged"
+
+    plotSingletons( scounts, sampleannot, targetdir, prefix, factor="Continent2" )
+
+    #targetfactors = ["Continent2","GeographicRegions3", "GeographicRegions2"]
+    targetfactors = ["Continent2"]
+    #for annotcol in targetfactors :
+        #plotSingletons( scounts, sampleannot, targetdir, prefix, factor=annotcol )
+# END singletonWorkflow2
+
 ################################################################################
 def singletonWorkflow( tfiles, sampleannot ) :
     print "Running singletonWorkflow"
@@ -495,11 +583,12 @@ def singletonWorkflow( tfiles, sampleannot ) :
     targetdir = "results/figures/singletons"
     prefix = "merged"
 
+    plotSingletons( scounts, sampleannot, targetdir, prefix, factor="Continent2" )
+
     #targetfactors = ["Continent2","GeographicRegions3", "GeographicRegions2"]
     targetfactors = ["Continent2"]
-
-    for annotcol in targetfactors :
-        plotSingletons( scounts, sampleannot, targetdir, prefix, factor=annotcol )
+    #for annotcol in targetfactors :
+        #plotSingletons( scounts, sampleannot, targetdir, prefix, factor=annotcol )
 # END singletonWorkflow
     #singles1 = readSingletonFile( dalysingletonfile, dalygenesfile )
     #singles2 = readSingletonFile( variomesingletonfile, variomegenesfile )
@@ -518,14 +607,14 @@ if __name__ == "__main__" :
                "./rawdata/onekg/main/vstats/onekg.clean.singletons"
               ],
          "genes":
-              ["./rawdata/daily/main/classify/daily.clean.sfilt_genes.tsv",
-               "./rawdata/mevariome/main/classify/variome.clean.sfilt_genes.tsv",
-               "./rawdata/onekg/main/classify/onekg.clean.sfilt_genes.tsv"
+              ["./rawdata/daily/main/classify/daily.clean.sfilt2_genes.tsv",
+               "./rawdata/mevariome/main/classify/variome.clean.sfilt2_genes.tsv",
+               "./rawdata/onekg/main/classify/onekg.clean.sfilt2_genes.tsv"
               ],
          "indiv":
-              ["./rawdata/daily/main/classify/daily.clean.sfilt_indiv.tsv",
-               "./rawdata/mevariome/main/classify/variome.clean.sfilt_indiv.tsv",
-               "./rawdata/onekg/main/classify/onekg.clean.sfilt_indiv.tsv"
+              ["./rawdata/daily/main/classify/daily.clean.sfilt2_indiv.tsv",
+               "./rawdata/mevariome/main/classify/variome.clean.sfilt2_indiv.tsv",
+               "./rawdata/onekg/main/classify/onekg.clean.sfilt2_indiv.tsv"
               ],
          "annot":
               ["./rawdata/daily/main/clust/daily.clean.annot",
@@ -540,14 +629,14 @@ if __name__ == "__main__" :
 
     force=False
     sampleannot = mergeAnnotFiles( tfiles, False )  
+    ifile = mergeIndivFiles( tfiles, True )
+
+    mfile = mergeGeneFiles( tfiles, True )
     #print sampleannot.head()
     #print hk.dfTable(sampleannot.Continent2)
     #print hk.dfTable(sampleannot.GeographicRegions3)
     singletonWorkflow( tfiles, sampleannot )
-    sys.exit(1)
-
-    ifile = mergeIndivFiles( tfiles, force )
-    mfile = mergeGeneFiles( tfiles, force )
+    #singletonWorkflow2( mfile, sampleannot )
 
     plotClassDist( mfile, ["Middle East","Anglo-American","Africa"], force=force )
     sys.exit(1)

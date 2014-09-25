@@ -202,11 +202,16 @@ def parseInfoColumn( chrom, pos, ref, alt, infodata, clinvar ) :
         #print col, vcounts_filt[col].values
     vclass = []
     for index,iso in vcounts_filt.iterrows() :
-        if "Polyphen2_HVAR_pred" not in iso.index : vclass.append("0"); continue
-        vclass.append(getVarClass( chrom, pos, iso["Priority"], 
-                                  iso["Polyphen2_HVAR_pred"], clinvar ))
+        if "Polyphen2_HVAR_pred" not in iso.index : 
+            curvclass = getVarClass( chrom, pos, iso["Priority"], 
+                                    '.', iso["FunctionGVS"],clinvar )
+        else :
+            curvclass = getVarClass( chrom, pos, iso["Priority"], 
+                                iso["Polyphen2_HVAR_pred"], iso["FunctionGVS"],clinvar )
+        vclass.append(curvclass)
 
     vcounts_filt["vclass"] = vclass
+    vcounts_filt["vclass"] = vcounts_filt["vclass"].astype(int)
     #print "Vcounts", vcounts_filt.head(1)
     return vcounts_filt
 # END parseInfoColumn
@@ -301,7 +306,7 @@ def calcAF(genecounts):
     #print [x for x in genecounts if x.find(":") == -1]
     ref,het,hom = [int(x) for x in genecounts.split(":")]
     if ref+het+hom == 0 : print "Err:",genecounts; return 0
-    return (1.*hom+het) / (1.*(ref+het+hom))
+    return (2.*hom+het) / (2.*(ref+het+hom))
 # END calcAF
 
 ################################################################################
@@ -414,17 +419,17 @@ def plotAFDistClassDensity( distdf, figurename ) :
 ################################################################################
 # getVarClass
 ################################################################################
-def getVarClass( chrom, pos, vprior, score, clinvar ) :
-    vclass = -1
+def getVarClass( chrom, pos, vprior, score, gvs, clinvar ) :
+    vclass = -2
     if "chr"+str(chrom)+":"+str(pos) in clinvar.index : vclass = 5
     elif vprior == "HIGH" : vclass = 4
-    elif vprior == "MODERATE" and score == "D" : vclass =3
-    elif (vprior == "MODERATE" and 
-          (score == "P" or score is np.nan)) : vclass =2
-    elif vprior == "MODERATE" and score == "B" : vclass =1
-    elif vprior == "LOW" : vclass =1
-    elif vprior == "MODIFIER" : vclass =0
-    #else : print "Info:",vprior,":",score,"Class:",vclass
+    elif vprior == "MODERATE" and score.find("D") >= 0 : vclass =3
+    elif vprior == "MODERATE" and score.find("P") >= 0 : vclass =2
+    elif vprior == "MODERATE" and score.find("B") >= 0 : vclass =1
+    elif vprior == "MODERATE" : vclass = 3
+    elif vprior == "LOW" and gvs in ["SYNONYMOUS_CODING"]: vclass =0
+    elif vprior == "MODIFIER" : vclass =-1
+    #print "Info:",vprior,":",score,"Class:",vclass,"gvs",gvs
     return vclass
 # END getVarClass
 
@@ -501,33 +506,15 @@ def parseEffVcf( effvcf, targetcols, force=False ) :
     annotation["key"] = ["chr%s:%s:%s:%s" %tuple(keylst) 
                         for keylst in 
                         annotation[["chrom","pos","ref","alt"]].values]
+
+    annotation["vclass"] = annotation["vclass"].astype(int)
+
     annotation.to_csv(tfile,sep="\t",index=False)
     annotation = []
 
     #annotation = DataFrame(annotation,columns=vcfcols)
     return chromfiles
 # END parseEffVcf
-    #if smallfile :
-        #annotation = (read_csv(effvcf, sep="\t", comment='#', compression="gzip",
-                              #names=vcfcols,header=None,low_memory=False)
-                      #.dropna(how='all')
-                      #.reset_index(drop=True)) #skiprows=range(4),
-
-        #print "Finished annotation"
-        #print annotation.head()
-
-        #annotation["CHROM"] = [str(int(x)) if hk.is_int(x) else str(x) 
-                               #for x in annotation["CHROM"].tolist()]
-
-
-        #annotation.index = ("chr"+annotation["CHROM"]+":"+
-                            #annotation["POS"].map(int).map(str)+':'+
-                            #annotation["REF"]+':'+annotation["ALT"])
-        #annotation["AF"], annotation['Missing'] = zip(*annotation["Meta"].map(parseMeta))
-        #annotation['Missing'] = [findMissing(x) for x in annotation.Meta]
-        #print "Major changes made, need to modify this code"
-        #sys.exit(1)
-    #else :
 
 ################################################################################
 # classifyVars
@@ -566,7 +553,7 @@ def classifyVars( effvcf, callvcf, sampleannot, regionlist, filepats,
                      #u'1000Gp1_AF', u'1000Gp1_AFR_AF', u'1000Gp1_AMR_AF', u'1000Gp1_ASN_AF', 
                      #u'1000Gp1_EUR_AF', u'29way_logOdds', u'ESP6500_AA_AF', u'ESP6500_EA_AF', 
 
-    chromfiles = parseEffVcf( effvcf, targetcolumns ) 
+    chromfiles = parseEffVcf( effvcf, targetcolumns, force ) 
     openannotation = 0  
 
     #regions = parseRegionsFile()
@@ -804,13 +791,6 @@ def makeSmallVCF( annotvcf, figuredir="./results/figures/classes", force=False )
     return smallvcf
 # END makeSmallVCF
 
-######################################################################
-# makeGeminiDB
-######################################################################
-def makeGeminiDB( ):
-    return
-# End makeGeminiDB
-
 ################################################################################
 # burdenAnalysis
 ################################################################################
@@ -913,6 +893,8 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
     varfilt.index = varfilt.chrom.map(str)+":"+varfilt.pos.map(str)
     vclasses = varfilt.vclass.unique().tolist()
 
+    print "N annotated variants:", len(varfilt)
+
     if os.path.splitext( vcffile )[1] == ".gz" :
         FH = gzip.open( vcffile )
     else : FH = open(vcffile)
@@ -943,6 +925,8 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
         vid = chrom+':'+str(pos)
         if vid not in varfilt.index : 
             print "Error: cant find var:",vid;continue
+        else :
+            print "Found var:",vid
 
         vclass = varfilt.ix[vid]["vclass"]
         islof = varfilt.ix[vid]["LOF"] is not np.nan
@@ -956,8 +940,11 @@ def individualVarStats( vcffile,geneannotfile,sampleannot,regionlist,filepats,fo
             continue
 
         for i in range(9,len(row)) : 
-            genotype = sum([int(x) for x in row[i][:3].split("/") 
-                            if hk.is_int(x)])
+            one,two = (row[i][0],row[i][2])
+            if one == "." : continue
+            genotype = int(one)+int(two)
+            #genotype = sum([int(x) for x in row[i][:3].split("/") 
+                            #if hk.is_int(x)])
             if genotype == 0 : continue
             csamp = samples[i-9]
             #print "I:",i, csamp,"-",vclass,"-", genotype
@@ -1354,8 +1341,8 @@ def basicClean( vcffile, rerun=False ):
 
     cleanbase = "%s/%s"%(filepath,basename)
     recodevcf = cleanbase+".recode.vcf"
-    tvcf = cleanbase+".sfilt.vcf"
-    tvcfgz = cleanbase+".sfilt.vcf.gz"
+    tvcf = cleanbase+".sfilt2.vcf"
+    tvcfgz = cleanbase+".sfilt2.vcf.gz"
     if os.path.exists( tvcfgz ) and not rerun :
         return tvcfgz
 
@@ -1391,6 +1378,7 @@ def basicClean( vcffile, rerun=False ):
     command = ["vcftools","--gzvcf", vcffile,
                "--remove-filtered-all",
                "--keep",keepfile,
+               "--hwe","0.005",
                "--min-alleles","2","--max-alleles","2",
                "--recode","--out",cleanbase]
 
@@ -1465,20 +1453,24 @@ if __name__ == "__main__" :
         vcffile = path+"/test/everything_set1.chr1.snp.clean.vcf.gz"
     elif dataset == "onekg" :
         vcffile = path+"/onekg/main/onekg.clean.vcf.gz"
-        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
+        clustfile = "./rawdata/onekg/main/clust/onekg.clean.annot"
     elif dataset == "test2" :
         vcffile = path+"/test2/main/test2.clean.vcf.gz"
+        clustfile = "./rawdata/mevariome/main/clust/variome.clean.annot"
         #vcffile = path+"/test2/test2.clean.vcf.gz"
+
     elif dataset == "daily" :
         vcffile = path+"/daily/main/daily.clean.vcf.gz"
         clustfile = "/media/data/workspace/variome/rawdata/daily/main/clust/daily.clean.annot"
+
     elif dataset == "merge1kg" :
         vcffile = path+"/merge1kg/main/me1000G.clean.vcf.gz"
         clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
+
     elif dataset == "mevariome" :
         vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
         #vcffile = path+"/mevariome/variome.vcf.gz"
-        clustfile = "./rawdata/merge1kg/main/clust/me1000G.clean.annot"
+        clustfile = "./rawdata/mevariome/main/clust/variome.clean.annot"
         #vcffile = path+"/mevariome/main/variome.clean.vcf.gz"
     elif dataset == "mergedaly" :
         vcffile = path+"/mergedaly/main/meceu.clean.vcf.gz"

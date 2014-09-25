@@ -413,7 +413,8 @@ def ibcCorrelation( plinkibc, festimibc, patientdata, factor="continent" ):
     plinkibcdata = read_csv( plinkibc, sep="\t" )
     #print plinkibcdata.head(3)
     #plinkibcdata.columns = ["blank","Family","Individual.ID","Homozygotes","Expected","Nonmissing","F"]
-    plinkall = merge(plinkibcdata[["Individual.ID","F"]],patientdata[["Individual.ID",factor]],how="left",on="Individual.ID")
+    plinkall = merge(plinkibcdata[["Individual.ID","F"]],
+                     patientdata[["Individual.ID",factor]],how="left",on="Individual.ID")
     plinkall = plinkall[plinkall[factor].notnull()]
     plinkall["Type"] = "Plink"
 
@@ -454,23 +455,26 @@ def ibcCorrelation( plinkibc, festimibc, patientdata, factor="continent" ):
 
     alldata = merge(allibcdata,patientdata[["Individual.ID",factor]], on="Individual.ID")
     if len(alldata) == 0 :
-        shortids = [x[:x.find('_')] if len(x) > 21 and x.find('_') > 0 else x for x in patientdata["Individual.ID"].tolist()]
+        shortids = ([x[:x.find('_')] 
+                     if len(x) > 21 and x.find('_') > 0 else x 
+                     for x in patientdata["Individual.ID"].tolist()])
         patientdata["Individual.ID.short"] = shortids
-        alldata = merge(allibcdata,patientdata[["Individual.ID.short",factor]], right_on="Individual.ID.short",left_on="Individual.ID")
+        alldata = (merge(allibcdata,patientdata[["Individual.ID.short",factor]], 
+                         right_on="Individual.ID.short",left_on="Individual.ID"))
 
     print "Alldata for IBC correlation"
     print alldata.head(3)
     alldata.F_x = alldata.F_x.map(float)
     alldata.F_y = alldata.F_y.map(float)
     r_dataframe = com.convert_to_r_dataframe(alldata)
-    p = ggplot2.ggplot(r_dataframe) + \
-                ggplot2.aes_string(x = "F_x",y="F_y") + \
-                ggplot2.geom_point(ggplot2.aes_string(colour="factor("+factor+")")) + \
-                ggplot2.theme(**mytheme) + \
-                ggplot2.ggtitle("Correlation between Inbreeding Coefficients") + \
-                ggplot2.scale_x_continuous("F (plink)") + \
-                ggplot2.scale_y_continuous("F (festim)") + \
-                ggplot2.stat_smooth(method="lm", se=False)
+    p = (ggplot2.ggplot(r_dataframe) +
+                ggplot2.aes_string(x = "F_x",y="F_y") +
+                ggplot2.geom_point(ggplot2.aes_string(colour="factor("+factor+")")) +
+                ggplot2.scale_x_continuous("F (plink)") +
+                ggplot2.scale_y_continuous("F (festim)",expand=robjects.IntVector((0,0))) +
+                ggplot2.stat_smooth(method="lm", se=False) +
+                ggplot2.theme(**mytheme) )
+                #ggplot2.ggtitle("Correlation between Inbreeding Coefficients") + \
                 #ggplot2.scale_colour_manual(values = robjects.StrVector(("blue", "red", "grey"))) + \
                 #ggplot2.scale_x_continuous("Sum of all variant sites in a gene", limits=robjects.IntVector((0,600))) + \
                 #ggplot2.geom_abline(intercept=rstats.coef(model_x)[1], slope=rstats.coef(model_x)[2])
@@ -858,7 +862,7 @@ def calculateIBC( targetfile, patientdata, rerun=False ) :
     for factor in targetfactors :
         #plotPlinkIBC( hetfile, patientdata, factor )
         #plotIBC( ibcfestim, patientdata, factor )
-        #ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
+        ibcCorrelation( hetfile, ibcfestim, patientdata, factor )
         ibcCountryCorrelation( plinkibcdata, basename, patientdata, "plink", factor )
         ibcCountryCorrelation( festimibcdata, basename, patientdata, "festim", factor )
 

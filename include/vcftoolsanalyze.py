@@ -58,6 +58,7 @@ def parseAnnotation(targetpats, annotationfile="./resources/annotation/patientan
 
     sampleannot = sampleannot[sampleannot["Individual.ID"].isin( targetpats )]
     return sampleannot
+# END parseAnnotation
 
 def subsectionVCFbyPop( vcffile, sampleannot, outprefix, popsprefix ) :
     allpopfiles = {}
